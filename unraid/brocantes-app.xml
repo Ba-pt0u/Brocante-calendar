@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>brocantes-app</Name>
+
+  <!--
+    Image locale construite depuis le dépôt.
+    Exécuter scripts/unraid-setup.sh avant d'appliquer ce template.
+  -->
+  <Repository>brocantes-app:latest</Repository>
+  <Registry></Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+
+  <Overview>
+    Scrape automatiquement les brocantes et vide-greniers à proximité d'une
+    localisation configurable (brocabrac.fr + vide-greniers.org) et expose un
+    flux ICS pour abonnement calendrier iPhone / macOS / Google Calendar.
+    Géocodage via Nominatim — aucune clé API requise.
+    &#xA;&#xA;
+    ⚠️ L'image doit être construite localement avant usage :&#xA;
+    bash /mnt/user/repos/brocantes-app/scripts/unraid-setup.sh
+  </Overview>
+
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8642]/</WebUI>
+  <TemplateURL/>
+  <Icon/>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+
+  <!-- ── Port ── -->
+  <Config
+    Name="Port Web UI"
+    Target="8000"
+    Default="8642"
+    Mode="tcp"
+    Description="Port d'accès à l'interface web et au flux ICS (http://IP:PORT/feed.ics)."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8642</Config>
+
+  <!-- ── Volume données ── -->
+  <Config
+    Name="Données persistantes"
+    Target="/app/data"
+    Default="/mnt/user/appdata/brocantes-app"
+    Mode="rw"
+    Description="Stockage de config.json, events.json et geocache.json. Ce dossier survit aux mises à jour du conteneur."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/brocantes-app</Config>
+
+  <!-- ── Variable d'environnement ── -->
+  <Config
+    Name="DATA_DIR"
+    Target="DATA_DIR"
+    Default="/app/data"
+    Mode=""
+    Description="Chemin interne des données (ne pas modifier sauf si vous changez le point de montage ci-dessus)."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">/app/data</Config>
+
+</Container>
