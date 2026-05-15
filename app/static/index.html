@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brocantes &amp; Vide-Greniers</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:wght@300;400;600&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    /* ── Design tokens ── */
+    :root {
+      --cream:       #F8F0E0;
+      --cream-mid:   #EEE0C4;
+      --cream-dark:  #DDD0B0;
+      --rust:        #B8481C;
+      --rust-light:  #D0653A;
+      --rust-dark:   #8B3410;
+      --sage:        #6E8F5E;
+      --sage-light:  #90AE80;
+      --sage-dark:   #4E6A40;
+      --ink:         #26180E;
+      --ink-light:   #5A3E28;
+      --gray:        #8A7A6A;
+      --white:       #FFFFFF;
+      --shadow:      rgba(38,24,14,.10);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--cream);
+      color: var(--ink);
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--rust);
+      color: var(--cream);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      box-shadow: 0 3px 10px var(--shadow);
+      flex-shrink: 0;
+    }
+    header .logo { font-size: 2.2rem; line-height: 1; }
+    header h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -.01em;
+    }
+    header .tagline { font-size: .85rem; opacity: .8; margin-top: .1rem; }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      padding: 2rem 1rem 5rem; /* bottom pad for status bar */
+    }
+    .container { max-width: 900px; margin: 0 auto; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--white);
+      border: 1px solid var(--cream-mid);
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 2px 8px var(--shadow);
+    }
+    .card-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--rust-dark);
+      margin-bottom: 1.1rem;
+      padding-bottom: .6rem;
+      border-bottom: 2px solid var(--cream-mid);
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+    }
+
+    /* ── Form ── */
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .75rem;
+      align-items: flex-end;
+    }
+    .form-group { flex: 1; min-width: 140px; }
+    .form-group.wide { flex: 2; min-width: 200px; }
+    label {
+      display: block;
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--ink-light);
+      margin-bottom: .35rem;
+    }
+    input[type="text"], select {
+      width: 100%;
+      padding: .55rem .8rem;
+      border: 2px solid var(--cream-dark);
+      border-radius: 6px;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: .95rem;
+      color: var(--ink);
+      background: var(--cream);
+      transition: border-color .2s;
+      appearance: none;
+      outline: none;
+    }
+    input[type="text"]:focus, select:focus { border-color: var(--rust); }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: .55rem 1.25rem;
+      border: 2px solid transparent;
+      border-radius: 6px;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: .95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .18s, color .18s, border-color .18s;
+      white-space: nowrap;
+    }
+    .btn-primary   { background: var(--rust);  color: var(--white); }
+    .btn-primary:hover  { background: var(--rust-dark); }
+    .btn-secondary { background: var(--sage);  color: var(--white); }
+    .btn-secondary:hover { background: var(--sage-dark); }
+    .btn-ghost {
+      background: transparent;
+      color: var(--rust);
+      border-color: var(--rust);
+    }
+    .btn-ghost:hover { background: var(--rust); color: var(--white); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Geocode feedback ── */
+    #geocode-status {
+      margin-top: .55rem;
+      font-size: .85rem;
+      color: var(--gray);
+      min-height: 1.2em;
+    }
+
+    /* ── ICS section ── */
+    .ics-row {
+      display: flex;
+      gap: .5rem;
+      align-items: stretch;
+    }
+    .ics-url-field {
+      flex: 1;
+      font-family: 'Courier New', monospace;
+      font-size: .85rem;
+      background: var(--cream);
+      border: 2px solid var(--cream-dark);
+      border-radius: 6px;
+      padding: .55rem .8rem;
+      color: var(--sage-dark);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: all;
+    }
+    .iphone-steps {
+      margin-top: 1rem;
+      background: var(--cream);
+      border-left: 4px solid var(--sage);
+      border-radius: 0 6px 6px 0;
+      padding: .9rem 1.1rem;
+      font-size: .88rem;
+      line-height: 1.7;
+    }
+    .iphone-steps .step-title {
+      font-weight: 600;
+      color: var(--sage-dark);
+      margin-bottom: .3rem;
+    }
+    .iphone-steps ol { padding-left: 1.3rem; }
+    .iphone-steps li { margin-bottom: .1rem; }
+    .iphone-steps kbd {
+      background: var(--cream-mid);
+      border: 1px solid var(--cream-dark);
+      border-radius: 3px;
+      padding: .05rem .35rem;
+      font-size: .8rem;
+      font-family: 'Source Sans 3', sans-serif;
+    }
+
+    /* ── Events list ── */
+    .events-header {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .count-pill {
+      background: var(--rust);
+      color: var(--white);
+      border-radius: 20px;
+      padding: .05rem .6rem;
+      font-size: .78rem;
+      font-weight: 600;
+    }
+
+    .event-item {
+      display: flex;
+      gap: 1rem;
+      padding: .9rem 0;
+      border-bottom: 1px solid var(--cream-mid);
+      align-items: flex-start;
+    }
+    .event-item:last-child { border-bottom: none; }
+
+    .date-badge {
+      min-width: 50px;
+      text-align: center;
+      background: var(--rust);
+      color: var(--white);
+      border-radius: 8px;
+      padding: .35rem .25rem;
+      flex-shrink: 0;
+      line-height: 1.1;
+    }
+    .date-badge .day {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.45rem;
+      font-weight: 700;
+    }
+    .date-badge .month {
+      font-size: .65rem;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      opacity: .9;
+    }
+    .date-badge.past { background: var(--gray); }
+
+    .ev-body { flex: 1; min-width: 0; }
+    .ev-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--rust-dark);
+      text-decoration: none;
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ev-title:hover { text-decoration: underline; }
+    .ev-location {
+      font-size: .85rem;
+      color: var(--gray);
+      margin-top: .15rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ev-meta { margin-top: .3rem; display: flex; gap: .4rem; flex-wrap: wrap; }
+    .src-badge {
+      display: inline-block;
+      font-size: .68rem;
+      font-weight: 600;
+      padding: .1rem .5rem;
+      border-radius: 20px;
+    }
+    .src-brocabrac   { background: #FFF0E8; color: var(--rust);      border: 1px solid #F0C0A0; }
+    .src-videgrenier { background: #EEF5EB; color: var(--sage-dark);  border: 1px solid #B0D0A0; }
+    .src-other       { background: var(--cream-mid); color: var(--ink-light); border: 1px solid var(--cream-dark); }
+
+    /* ── Empty / loading states ── */
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--gray);
+    }
+    .empty-state .big-emoji { font-size: 3rem; margin-bottom: .75rem; }
+    .empty-state p { margin-top: .4rem; font-size: .9rem; }
+
+    /* ── Status bar ── */
+    #status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--ink);
+      color: var(--cream);
+      font-size: .82rem;
+      padding: .7rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .5rem;
+      flex-wrap: wrap;
+      z-index: 100;
+      box-shadow: 0 -2px 8px rgba(0,0,0,.25);
+    }
+    .status-left { display: flex; align-items: center; gap: 1rem; }
+    .dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--sage);
+      margin-right: .35rem;
+      vertical-align: middle;
+    }
+    .dot.spinning {
+      background: var(--rust-light);
+      animation: blink 1s ease infinite;
+    }
+    @keyframes blink { 0%,100% { opacity:1 } 50% { opacity:.25 } }
+
+    /* ── Toast ── */
+    #toast-wrap {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 999;
+      display: flex;
+      flex-direction: column;
+      gap: .45rem;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--ink);
+      color: var(--white);
+      padding: .7rem 1.1rem;
+      border-radius: 8px;
+      font-size: .88rem;
+      max-width: 280px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.3);
+      animation: slideIn .3s ease forwards;
+      pointer-events: auto;
+    }
+    .toast.success { border-left: 4px solid var(--sage); }
+    .toast.error   { border-left: 4px solid var(--rust-light); }
+    .toast.info    { border-left: 4px solid #5BA4E0; }
+    @keyframes slideIn {
+      from { transform: translateX(110%); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0);    opacity: 1; }
+      to   { transform: translateX(110%); opacity: 0; }
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 560px) {
+      header h1 { font-size: 1.3rem; }
+      .form-group.wide { flex: 1 1 100%; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🛍️</span>
+  <div>
+    <h1>Brocantes &amp; Vide-Greniers</h1>
+    <div class="tagline">Calendrier automatique des marchés à proximité</div>
+  </div>
+</header>
+
+<main>
+  <div class="container">
+
+    <!-- Settings card -->
+    <div class="card">
+      <div class="card-title">📍 Localisation &amp; Paramètres</div>
+      <div class="form-row">
+        <div class="form-group wide">
+          <label for="city-input">Ville ou adresse</label>
+          <input
+            type="text"
+            id="city-input"
+            placeholder="ex : Lyon, Bordeaux, 75001 Paris…"
+            onkeydown="if(event.key==='Enter') saveConfig()"
+          />
+        </div>
+        <div class="form-group">
+          <label for="radius-sel">Rayon</label>
+          <select id="radius-sel">
+            <option value="10">10 km</option>
+            <option value="20">20 km</option>
+            <option value="30" selected>30 km</option>
+            <option value="50">50 km</option>
+            <option value="75">75 km</option>
+            <option value="100">100 km</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="refresh-sel">Actualisation</label>
+          <select id="refresh-sel">
+            <option value="6">Toutes les 6 h</option>
+            <option value="12" selected>Toutes les 12 h</option>
+            <option value="24">Toutes les 24 h</option>
+          </select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button class="btn btn-primary" id="save-btn" onclick="saveConfig()">Rechercher</button>
+        </div>
+      </div>
+      <div id="geocode-status"></div>
+    </div>
+
+    <!-- ICS feed card -->
+    <div class="card">
+      <div class="card-title">📅 Flux Calendrier (ICS)</div>
+      <div class="ics-row">
+        <div class="ics-url-field" id="ics-url" title="URL du flux calendrier"></div>
+        <button class="btn btn-ghost" onclick="copyIcs()">Copier</button>
+        <a class="btn btn-secondary" id="ics-open" href="/feed.ics" target="_blank"
+           style="text-decoration:none; display:inline-flex; align-items:center;">
+          Ouvrir
+        </a>
+      </div>
+
+      <div class="iphone-steps">
+        <div class="step-title">📱 S'abonner sur iPhone / iPad</div>
+        <ol>
+          <li><kbd>Réglages</kbd> → <kbd>Calendrier</kbd> → <kbd>Comptes</kbd></li>
+          <li>→ <kbd>Ajouter un compte</kbd> → <kbd>Autre</kbd></li>
+          <li>→ <kbd>S'abonner à un calendrier</kbd></li>
+          <li>Collez l'URL ci-dessus, puis appuyez sur <kbd>Suivant</kbd></li>
+          <li>Vérifiez le nom et appuyez sur <kbd>Enregistrer</kbd></li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- Events card -->
+    <div class="card">
+      <div class="card-title events-header">
+        🗓️ Événements à venir
+        <span class="count-pill" id="ev-count">0</span>
+      </div>
+      <div id="ev-list">
+        <div class="empty-state">
+          <div class="big-emoji">⏳</div>
+          <p>Chargement des événements…</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /container -->
+</main>
+
+<!-- Status bar -->
+<div id="status-bar">
+  <div class="status-left">
+    <span><span class="dot" id="status-dot"></span><span id="status-txt">En attente…</span></span>
+    <span id="refresh-txt" style="opacity:.7"></span>
+  </div>
+  <button class="btn btn-secondary" onclick="forceRefresh()"
+          style="padding:.35rem 1rem; font-size:.8rem;">↻ Actualiser</button>
+</div>
+
+<!-- Toasts -->
+<div id="toast-wrap"></div>
+
+<script>
+/* ── State ── */
+let _isRefreshing = false;
+let _pollTimer = null;
+
+const MONTHS_FR = ['jan','fév','mar','avr','mai','juin','juil','août','sep','oct','nov','déc'];
+
+/* ── Init ── */
+document.addEventListener('DOMContentLoaded', async () => {
+  updateIcsUrl();
+  await loadConfig();
+  await loadEvents();
+  startPolling();
+});
+
+/* ── ICS URL ── */
+function updateIcsUrl() {
+  const url = `${location.origin}/feed.ics`;
+  document.getElementById('ics-url').textContent = url;
+  document.getElementById('ics-open').href = url;
+}
+
+/* ── Load config ── */
+async function loadConfig() {
+  try {
+    const cfg = await apiFetch('/api/config');
+    document.getElementById('city-input').value  = cfg.city       || '';
+    document.getElementById('radius-sel').value  = cfg.radius_km  || 30;
+    document.getElementById('refresh-sel').value = cfg.refresh_hours || 12;
+    if (cfg.city) {
+      document.getElementById('geocode-status').textContent =
+        `📍 ${cfg.city}  (${(+cfg.lat).toFixed(4)}, ${(+cfg.lng).toFixed(4)})`;
+    }
+  } catch { /* silent */ }
+}
+
+/* ── Save config (geocode + POST) ── */
+async function saveConfig() {
+  const addr = document.getElementById('city-input').value.trim();
+  if (!addr) { toast('Entrez une ville ou adresse', 'error'); return; }
+
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  const geo = await geocode(addr);
+  if (!geo) { btn.disabled = false; btn.textContent = 'Rechercher'; return; }
+
+  const payload = {
+    lat:           geo.lat,
+    lng:           geo.lng,
+    city:          geo.city,
+    radius_km:     +document.getElementById('radius-sel').value,
+    refresh_hours: +document.getElementById('refresh-sel').value,
+  };
+
+  try {
+    await apiFetch('/api/config', { method:'POST', json: payload });
+    toast('Paramètres sauvegardés – scan en cours…', 'success');
+    setTimeout(loadEvents, 2500);
+  } catch (e) {
+    toast('Erreur lors de la sauvegarde', 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = 'Rechercher';
+}
+
+/* ── Nominatim geocoding ── */
+async function geocode(address) {
+  const el = document.getElementById('geocode-status');
+  el.textContent = '🔍 Géocodage en cours…';
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=fr&limit=1`;
+    const res  = await fetch(url, { headers: { 'Accept-Language': 'fr' } });
+    const data = await res.json();
+    if (!data.length) {
+      el.textContent = '❌ Localisation non trouvée. Essayez une ville plus précise.';
+      return null;
+    }
+    const p = data[0];
+    const city = p.display_name.split(',').slice(0, 2).join(', ');
+    el.textContent = `✅ ${city}  (${(+p.lat).toFixed(4)}, ${(+p.lon).toFixed(4)})`;
+    return { lat: +p.lat, lng: +p.lon, city };
+  } catch {
+    el.textContent = '❌ Erreur de géocodage. Vérifiez votre connexion.';
+    return null;
+  }
+}
+
+/* ── Load events ── */
+async function loadEvents() {
+  try {
+    const data = await apiFetch('/api/events');
+    renderEvents(data.events || []);
+    document.getElementById('ev-count').textContent = data.count ?? 0;
+    document.getElementById('status-txt').textContent =
+      `${data.count ?? 0} événement${(data.count ?? 0) !== 1 ? 's' : ''}`;
+    if (data.last_refresh) {
+      const d = new Date(data.last_refresh);
+      document.getElementById('refresh-txt').textContent =
+        `Mis à jour : ${d.toLocaleDateString('fr-FR')} ${d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
+    }
+  } catch { /* silent */ }
+}
+
+/* ── Render event list ── */
+function renderEvents(events) {
+  const list = document.getElementById('ev-list');
+  if (!events.length) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="big-emoji">🔍</div>
+        <p>Aucun événement trouvé pour le moment.</p>
+        <p>Configurez votre localisation et lancez un scan.</p>
+      </div>`;
+    return;
+  }
+
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  list.innerHTML = events.map(ev => {
+    let dayStr = '?', monStr = '?', isPast = false;
+    if (ev.date_parsed) {
+      const d = new Date(ev.date_parsed + 'T12:00:00');
+      dayStr = d.getDate();
+      monStr = MONTHS_FR[d.getMonth()];
+      isPast = d < today;
+    }
+
+    const badgeCls  = isPast ? 'date-badge past' : 'date-badge';
+    const srcClass  = srcBadgeClass(ev.source || '');
+    const srcLabel  = esc(ev.source || 'source inconnue');
+
+    const titleHtml = ev.url
+      ? `<a class="ev-title" href="${esc(ev.url)}" target="_blank" rel="noopener">${esc(ev.title)}</a>`
+      : `<span class="ev-title">${esc(ev.title)}</span>`;
+
+    const locHtml = ev.location
+      ? `<div class="ev-location">📍 ${esc(ev.location)}</div>` : '';
+
+    return `
+      <div class="event-item">
+        <div class="${badgeCls}">
+          <div class="day">${dayStr}</div>
+          <div class="month">${monStr}</div>
+        </div>
+        <div class="ev-body">
+          ${titleHtml}
+          ${locHtml}
+          <div class="ev-meta">
+            <span class="src-badge ${srcClass}">${srcLabel}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function srcBadgeClass(source) {
+  if (source.includes('brocabrac'))    return 'src-brocabrac';
+  if (source.includes('vide-grenier')) return 'src-videgrenier';
+  return 'src-other';
+}
+
+/* ── Force refresh ── */
+async function forceRefresh() {
+  try {
+    await apiFetch('/api/refresh', { method: 'POST' });
+    toast('Scan lancé…', 'info');
+    document.getElementById('status-dot').className = 'dot spinning';
+    document.getElementById('status-txt').textContent = 'Scan en cours…';
+    setTimeout(loadEvents, 3500);
+  } catch { toast('Erreur réseau', 'error'); }
+}
+
+/* ── Copy ICS URL ── */
+async function copyIcs() {
+  const url = document.getElementById('ics-url').textContent;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('URL copiée ! 📋', 'success');
+  } catch {
+    /* legacy fallback */
+    const el = Object.assign(document.createElement('textarea'), { value: url });
+    document.body.appendChild(el); el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    toast('URL copiée ! 📋', 'success');
+  }
+}
+
+/* ── Polling for status ── */
+function startPolling() {
+  _pollTimer = setInterval(async () => {
+    try {
+      const s = await apiFetch('/api/status');
+      const dot = document.getElementById('status-dot');
+      if (s.is_refreshing) {
+        dot.className = 'dot spinning';
+        document.getElementById('status-txt').textContent = 'Scan en cours…';
+      } else {
+        if (_isRefreshing && !s.is_refreshing) {
+          await loadEvents();
+        }
+        dot.className = 'dot';
+      }
+      _isRefreshing = s.is_refreshing;
+    } catch { /* ignore */ }
+  }, 8000);
+}
+
+/* ── Helpers ── */
+async function apiFetch(path, opts = {}) {
+  const init = { headers: { 'Content-Type': 'application/json' } };
+  if (opts.method) init.method = opts.method;
+  if (opts.json)   init.body   = JSON.stringify(opts.json);
+  const res = await fetch(path, init);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function esc(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function toast(msg, type = 'info') {
+  const wrap  = document.getElementById('toast-wrap');
+  const el    = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'slideOut .3s ease forwards';
+    setTimeout(() => el.remove(), 320);
+  }, 3200);
+}
+</script>
+</body>
+</html>
