@@ -1,0 +1,35 @@
+# docker-compose pour Unraid — Docker Compose Manager plugin
+#
+# Chemin recommandé pour ce fichier :
+#   /mnt/user/appdata/brocantes-app/docker-compose.yml
+#
+# Le code source (Dockerfile + app/) doit se trouver dans le même dossier
+# ou dans COMPOSE_DIR (voir ci-dessous).
+#
+# Première mise en route :
+#   1. Copier tout le dépôt dans /mnt/user/appdata/brocantes-app/
+#   2. Dans Unraid → Docker → Compose → Add New Stack → coller ce fichier
+#   3. Cliquer "Compose Up"
+
+services:
+  brocantes-app:
+    build: .
+    container_name: brocantes-app
+    ports:
+      - "8642:8000"
+    volumes:
+      # Chemin absolu → les données survivent aux rebuilds et restent dans appdata
+      - /mnt/user/appdata/brocantes-app/data:/app/data
+    environment:
+      - DATA_DIR=/app/data
+    restart: unless-stopped
+    labels:
+      # Lien cliquable dans le dashboard Unraid
+      net.unraid.docker.webui: "http://[IP]:[PORT:8642]/"
+      net.unraid.docker.icon: "https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/calendar.png"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/status')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
