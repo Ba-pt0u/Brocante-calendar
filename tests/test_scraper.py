@@ -24,6 +24,8 @@ from app.scraper import (
     _load_geocache,
     _save_geocache,
     _haversine_km,
+    _slugify,
+    _dept_from_postcode,
     scrape_all,
     CARD_SELECTORS,
     _last_scrape_results,
@@ -297,6 +299,46 @@ class TestHaversine:
         assert a == pytest.approx(b)
 
 
+# ── Unit: _slugify ─────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestSlugify:
+    def test_simple_name(self):
+        assert _slugify("Lyon") == "lyon"
+
+    def test_hyphenated_name(self):
+        assert _slugify("Saint-Arnoult-en-Yvelines") == "saint-arnoult-en-yvelines"
+
+    def test_accented_chars_removed(self):
+        assert _slugify("Clairefontaine-en-Yvelines") == "clairefontaine-en-yvelines"
+        assert _slugify("Île-de-France") == "ile-de-france"
+
+    def test_spaces_become_hyphens(self):
+        assert _slugify("Le Mans") == "le-mans"
+
+    def test_apostrophe_becomes_hyphen(self):
+        assert _slugify("L'Haÿ-les-Roses") == "l-hay-les-roses"
+
+
+# ── Unit: _dept_from_postcode ──────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestDeptFromPostcode:
+    def test_mainland(self):
+        assert _dept_from_postcode("78730") == "78"
+        assert _dept_from_postcode("69001") == "69"
+        assert _dept_from_postcode("75001") == "75"
+
+    def test_overseas(self):
+        assert _dept_from_postcode("97100") == "971"
+        assert _dept_from_postcode("98800") == "988"
+
+    def test_empty_or_short(self):
+        assert _dept_from_postcode("") == ""
+        assert _dept_from_postcode("7") == ""
+        assert _dept_from_postcode(None) == ""  # type: ignore[arg-type]
+
+
 # ── Integration: scrape_all with mocked HTTP ──────────────────────────────────
 
 @pytest.mark.integration
@@ -423,6 +465,38 @@ async def test_brocabrac_url_falls_back_to_coords_without_city(httpx_mock, monke
         r for r in httpx_mock.get_requests() if "brocabrac.fr" in str(r.url)
     )
     assert "48.59" in str(brocabrac_req.url)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_brocabrac_url_uses_dept_slug_format(httpx_mock, monkeypatch, isolated_data):
+    """When city geocoding returns a postcode, brocabrac URL uses /{dept}/{slug}/ format."""
+    nominatim_saint_arnoult = json.dumps([{
+        "lat": "48.5912",
+        "lon": "1.8763",
+        "display_name": "Saint-Arnoult-en-Yvelines, Yvelines, Île-de-France, France",
+        "address": {"postcode": "78730", "village": "Saint-Arnoult-en-Yvelines", "country": "France"},
+    }])
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(
+        url=re.compile(r"https://nominatim\.openstreetmap\.org/.*"),
+        text=nominatim_saint_arnoult,
+        headers={"Content-Type": "application/json"},
+        is_reusable=True,
+    )
+
+    async def _noop_sleep(_):
+        pass
+    monkeypatch.setattr("app.scraper.asyncio.sleep", _noop_sleep)
+
+    await scrape_all(48.591, 1.876, 10, city="Saint-Arnoult-en-Yvelines")
+
+    brocabrac_req = next(r for r in httpx_mock.get_requests() if "brocabrac.fr" in str(r.url))
+    url_str = str(brocabrac_req.url)
+    assert "/78/saint-arnoult-en-yvelines/" in url_str
+    assert "localisation" not in url_str
+    assert "48.591" not in url_str
 
 
 @pytest.mark.integration

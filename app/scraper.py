@@ -5,6 +5,7 @@ import logging
 import math
 import re
 import time
+import unicodedata
 from datetime import date, datetime
 from typing import Optional
 from urllib.parse import quote as url_quote
@@ -94,6 +95,24 @@ def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     dlng = math.radians(lng2 - lng1)
     a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
     return R * 2 * math.asin(math.sqrt(a))
+
+
+def _slugify(text: str) -> str:
+    """Convert a French city name to a brocabrac.fr URL slug."""
+    text = unicodedata.normalize("NFD", text)
+    text = text.encode("ascii", "ignore").decode("ascii")
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    return text.strip("-")
+
+
+def _dept_from_postcode(postcode: str) -> str:
+    """Extract French department code from a 5-digit postal code."""
+    if not postcode or len(postcode) < 2:
+        return ""
+    if postcode.startswith("97") or postcode.startswith("98"):
+        return postcode[:3]
+    return postcode[:2]
 
 
 # ──────────────────────────────────────────────
@@ -333,17 +352,43 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
         "Accept-Encoding": "gzip, deflate, br",
         "DNT": "1",
     }
-    # brocabrac.fr expects a city/address name in `localisation`, not raw coordinates.
-    # Use only the commune part (before the first comma) for a clean search term.
-    # vide-greniers.org uses explicit lat=/lng= parameters → coordinates are correct there.
-    brocabrac_city = city.split(",")[0].strip() if city else ""
-    brocabrac_location = url_quote(brocabrac_city) if brocabrac_city else f"{lat},{lng}"
+
+    # Load geocache early — shared by city geocoding and event geocoding below.
+    geocache = _load_geocache()
+
+    # ── brocabrac.fr URL ──────────────────────────────────────────────────────
+    # The reliable URL format is /{dept}/{commune-slug}/ (e.g. /78/saint-arnoult-en-yvelines/).
+    # To get the dept code we need the postal code, which comes from geocoding the city.
+    # vide-greniers.org uses explicit lat=/lng= → coordinates are fine there.
+    brocabrac_city_raw = city.split(",")[0].strip() if city else ""
+    city_key = brocabrac_city_raw.strip().lower()
+
+    if city_key and city_key not in geocache:
+        # Geocode the config city once to get its postal code / dept.
+        await _geocode_batch([brocabrac_city_raw], geocache)
+        _save_geocache(geocache)
+
+    city_geo = geocache.get(city_key) if city_key else None
+    dept = _dept_from_postcode((city_geo or {}).get("postcode", ""))
+    city_slug = _slugify(brocabrac_city_raw)
+
+    if dept and city_slug:
+        brocabrac_url = f"https://brocabrac.fr/{dept}/{city_slug}/"
+    elif brocabrac_city_raw:
+        brocabrac_url = (
+            f"https://brocabrac.fr/brocantes-vide-greniers"
+            f"?localisation={url_quote(brocabrac_city_raw)}&rayon={radius_km}"
+        )
+    else:
+        brocabrac_url = (
+            f"https://brocabrac.fr/brocantes-vide-greniers"
+            f"?localisation={lat},{lng}&rayon={radius_km}"
+        )
+
+    logger.info("brocabrac.fr URL: %s", brocabrac_url)
+
     sources = [
-        (
-            f"https://brocabrac.fr/brocantes-vide-greniers?localisation={brocabrac_location}&rayon={radius_km}",
-            "brocabrac.fr",
-            "https://brocabrac.fr",
-        ),
+        (brocabrac_url, "brocabrac.fr", "https://brocabrac.fr"),
         (
             f"https://vide-greniers.org/recherche?lat={lat}&lng={lng}&distance={radius_km}",
             "vide-greniers.org",
@@ -351,6 +396,7 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
         ),
     ]
 
+    # ── Scrape ────────────────────────────────────────────────────────────────
     all_events: list = []
     async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
         for url, name, domain in sources:
@@ -359,7 +405,7 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
             _last_scrape_results[name] = src_result
             all_events.extend(src_events)
 
-    # Deduplicate
+    # ── Deduplicate + sort ────────────────────────────────────────────────────
     seen: dict = {}
     for ev in all_events:
         uid = ev.get("uid", "")
@@ -367,8 +413,7 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
             seen[uid] = ev
     unique_events = sorted(seen.values(), key=lambda e: e.get("date_parsed", "9999-12-31"))
 
-    # Geocode event locations for rich iOS calendar cards
-    geocache = _load_geocache()
+    # ── Geocode event locations ───────────────────────────────────────────────
     unique_locations = list({ev["location"] for ev in unique_events if ev.get("location")})
     await _geocode_batch(unique_locations, geocache)
     _save_geocache(geocache)
@@ -378,6 +423,7 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
         if key and geocache.get(key):
             ev["geo"] = geocache[key]
 
+    # ── Distance filter ───────────────────────────────────────────────────────
     # Drop events whose geocoded location is clearly outside the requested radius.
     # Events without geocoded coords pass through (we cannot verify their distance).
     filtered = [

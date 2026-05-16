@@ -275,10 +275,19 @@ retourne 0 événements (`"error": "HTTP 403"`, `"strategy": null`, etc.).
 
 | Source | URL de recherche |
 |---|---|
-| brocabrac.fr | `https://brocabrac.fr/brocantes-vide-greniers?localisation={lat},{lng}&rayon={km}` |
+| brocabrac.fr | `https://brocabrac.fr/{dept}/{commune-slug}/` (ex : `/78/saint-arnoult-en-yvelines/`) |
 | vide-greniers.org | `https://vide-greniers.org/recherche?lat={lat}&lng={lng}&distance={km}` |
 
-**Stratégie par priorité :**
+**Construction de l'URL brocabrac.fr :**
+1. La ville est géocodée via Nominatim (résultat mis en cache dans `geocache.json`)
+2. Le code département est extrait du code postal (ex : `78730` → `78`)
+3. Le slug est généré depuis le nom de la commune (normalisation Unicode, minuscules, tirets)
+4. Fallback vers `?localisation={ville}&rayon={km}` si le géocodage ne retourne pas de code postal
+
+**Filtre de distance :**
+Après géocodage, les événements dont les coordonnées dépassent `rayon × 1.15 km` du centre de recherche sont éliminés côté serveur (les sources ne respectent pas toujours leur propre rayon).
+
+**Stratégie de parsing par priorité :**
 1. JSON-LD `<script type="application/ld+json">` (schéma `Event`) — rapide et fiable
 2. CSS selectors en cascade (14 sélecteurs testés en ordre décroissant de spécificité)
 
