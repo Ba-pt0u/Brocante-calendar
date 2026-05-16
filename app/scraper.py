@@ -529,12 +529,19 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
         ),
     ]
 
-    # ── Scrape ────────────────────────────────────────────────────────────────
+    # ── Scrape (parallel) ────────────────────────────────────────────────────
     all_events: list = []
+
+    async def _do_scrape(url: str, name: str, domain: str):
+        src_events, src_result = await _scrape_source(client, url, name, domain)
+        src_result["last_run"] = datetime.now().isoformat()
+        return name, src_events, src_result
+
     async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
-        for url, name, domain in sources:
-            src_events, src_result = await _scrape_source(client, url, name, domain)
-            src_result["last_run"] = datetime.now().isoformat()
+        gathered = await asyncio.gather(*[
+            _do_scrape(url, name, domain) for url, name, domain in sources
+        ])
+        for name, src_events, src_result in gathered:
             _last_scrape_results[name] = src_result
             all_events.extend(src_events)
 

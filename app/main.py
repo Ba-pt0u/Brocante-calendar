@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -28,6 +28,7 @@ _state: dict[str, Any] = {
     "is_refreshing": False,
     "refresh_count": 0,
     "ics_cache": {},  # keyed by normalised types string → {"etag": str, "content": bytes}
+    "events": None,  # None = not yet loaded, [] = explicitly empty
 }
 _scheduler = AsyncIOScheduler()
 
@@ -55,6 +56,7 @@ async def _do_refresh() -> None:
             city=config.get("city", ""),
         )
         save_events(events)
+        _state["events"] = events
         _state["last_refresh"] = datetime.now().isoformat()
         _state["refresh_count"] += 1
         _state["ics_cache"] = {}  # invalidate all cached ICS feeds
@@ -108,7 +110,7 @@ _VALID_TYPES = {"brocante", "vide-grenier", "braderie", "bourse", "marche-puces"
 @app.get("/feed.ics", response_class=Response)
 async def ics_feed(request: Request, types: Optional[str] = None):
     config = load_config()
-    events = load_events()
+    events = _state["events"] if _state["events"] is not None else load_events()
 
     # Normalise the types filter into a stable cache key
     type_set: set[str] = set()
@@ -159,6 +161,7 @@ async def api_post_config(body: ConfigPayload):
     if location_changed:
         # Purge immediately so the UI doesn't show stale events from the old location
         save_events([])
+        _state["events"] = []
         _state["last_refresh"] = None
         _state["ics_cache"] = {}  # invalidate all cached ICS feeds
     _reschedule(body.refresh_hours)
@@ -167,8 +170,30 @@ async def api_post_config(body: ConfigPayload):
 
 
 @app.get("/api/events")
-async def api_events():
-    events = load_events()
+async def api_events(
+    types: Optional[str] = None,
+    dept: Optional[str] = None,
+    within_days: Optional[int] = None,
+):
+    events = _state["events"] if _state["events"] is not None else load_events()
+
+    if types:
+        type_set = {t.strip() for t in types.split(",") if t.strip() in _VALID_TYPES}
+        if type_set:
+            events = [e for e in events if e.get("ev_type", "autre") in type_set]
+
+    if dept:
+        dept = dept.strip()[:3]
+        events = [
+            e for e in events
+            if ((e.get("geo") or {}).get("postcode", "") or "")[:len(dept)] == dept
+        ]
+
+    if within_days and within_days > 0:
+        today = date.today().isoformat()
+        cutoff = (date.today() + timedelta(days=within_days)).isoformat()
+        events = [e for e in events if today <= (e.get("date_parsed") or "") <= cutoff]
+
     return {
         "events": events,
         "count": len(events),
@@ -180,6 +205,7 @@ async def api_events():
 async def api_purge_events():
     """Purge all cached events. The next scheduled refresh will repopulate."""
     save_events([])
+    _state["events"] = []
     _state["last_refresh"] = None
     _state["ics_cache"] = {}  # invalidate all cached ICS feeds
     return {"status": "ok", "message": "Events purged"}
