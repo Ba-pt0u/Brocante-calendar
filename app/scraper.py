@@ -244,17 +244,35 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
             title = item.get("name", "").strip()
             start = item.get("startDate", "")
             loc_obj = item.get("location", {})
+            location = ""
+            geo_query = ""
             if isinstance(loc_obj, dict):
                 addr = loc_obj.get("address", {})
-                location = loc_obj.get("name", "") or (
-                    addr.get("addressLocality", "") if isinstance(addr, dict) else str(addr)
-                )
+                venue = loc_obj.get("name", "").strip()
+                if isinstance(addr, dict):
+                    postcode = addr.get("postalCode", "").strip()
+                    locality = addr.get("addressLocality", "").strip()
+                    street = addr.get("streetAddress", "").strip()
+                    # Display location: prefer venue name, fall back to locality
+                    location = venue or locality
+                    # Geocoding query: full address gives Nominatim much better context
+                    addr_part = f"{postcode} {locality}".strip() if (postcode or locality) else ""
+                    if street and addr_part:
+                        geo_query = f"{street}, {addr_part}"
+                    elif venue and addr_part:
+                        geo_query = f"{venue}, {addr_part}"
+                    else:
+                        geo_query = addr_part or venue
+                else:
+                    location = venue or (str(addr) if addr else "")
             else:
-                location = str(loc_obj)
+                location = str(loc_obj) if loc_obj else ""
+            if not geo_query:
+                geo_query = location
             parsed = parse_french_date(start)
             if title and parsed and parsed >= date.today():
                 uid = make_uid(title, str(parsed), location)
-                events.append({
+                ev = {
                     "title": title,
                     "date_parsed": str(parsed),
                     "location": location,
@@ -263,7 +281,10 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
                     "uid": uid,
                     "source": source_name,
                     "ev_type": _classify_event(title),
-                })
+                }
+                if geo_query != location:
+                    ev["geo_query"] = geo_query
+                events.append(ev)
     return events
 
 
@@ -433,14 +454,19 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
     unique_events = sorted(seen.values(), key=lambda e: e.get("date_parsed", "9999-12-31"))
 
     # ── Geocode event locations ───────────────────────────────────────────────
-    unique_locations = list({ev["location"] for ev in unique_events if ev.get("location")})
-    await _geocode_batch(unique_locations, geocache)
+    # Prefer geo_query (full address from JSON-LD) over bare venue name for geocoding.
+    unique_queries = list({
+        ev.get("geo_query") or ev["location"]
+        for ev in unique_events
+        if ev.get("geo_query") or ev.get("location")
+    })
+    await _geocode_batch(unique_queries, geocache)
     _save_geocache(geocache)
 
     for ev in unique_events:
-        key = ev.get("location", "").strip().lower()
-        if key and geocache.get(key):
-            ev["geo"] = geocache[key]
+        query_key = (ev.get("geo_query") or ev.get("location", "")).strip().lower()
+        if query_key and geocache.get(query_key):
+            ev["geo"] = geocache[query_key]
 
     # ── Distance filter ───────────────────────────────────────────────────────
     # Drop events whose geocoded location is clearly outside the requested radius.

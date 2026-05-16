@@ -45,7 +45,12 @@ BROCABRAC_JSONLD = """<!DOCTYPE html><html><head>
     "location": {
       "@type": "Place",
       "name": "Place Bellecour",
-      "address": {"@type": "PostalAddress", "addressLocality": "Lyon"}
+      "address": {
+        "@type": "PostalAddress",
+        "streetAddress": "Place Bellecour",
+        "postalCode": "69002",
+        "addressLocality": "Lyon"
+      }
     },
     "description": "Brocante mensuelle",
     "url": "https://brocabrac.fr/event/123"
@@ -61,6 +66,30 @@ BROCABRAC_JSONLD = """<!DOCTYPE html><html><head>
 ]
 </script>
 </head><body><h1>Brocantes près de Lyon</h1></body></html>"""
+
+# Event with venue-only name and no city in location — typical "Les Framboisines" case
+BROCABRAC_VENUE_ONLY = """<!DOCTYPE html><html><head>
+<script type="application/ld+json">
+[
+  {
+    "@context": "https://schema.org",
+    "@type": "Event",
+    "name": "Brocante aux Framboisines",
+    "startDate": "2026-08-10",
+    "location": {
+      "@type": "Place",
+      "name": "Les Framboisines",
+      "address": {
+        "@type": "PostalAddress",
+        "postalCode": "78720",
+        "addressLocality": "Bullion"
+      }
+    },
+    "url": "https://brocabrac.fr/event/999"
+  }
+]
+</script>
+</head><body></body></html>"""
 
 BROCABRAC_CARDS = """<!DOCTYPE html><html><body>
 <article class="card">
@@ -147,11 +176,34 @@ class TestParseJsonld:
         ev = _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")[0]
         assert ev["title"] == "Grande Brocante de Lyon"
         assert ev["date_parsed"] == "2026-07-15"
-        # JSON-LD uses location.name ("Place Bellecour"), not addressLocality
-        assert ev["location"] == "Place Bellecour"
+        assert ev["location"] == "Place Bellecour"  # venue name for display
         assert ev["source"] == "brocabrac.fr"
         assert ev["url"] == "https://brocabrac.fr/event/123"
         assert ev["ev_type"] == "brocante"
+
+    def test_geo_query_built_from_full_address(self):
+        soup = self._soup(BROCABRAC_JSONLD)
+        ev = _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")[0]
+        # geo_query should include street + postcode + locality for Nominatim
+        geo_query = ev.get("geo_query", "")
+        assert "Lyon" in geo_query
+        assert "69002" in geo_query
+
+    def test_venue_only_name_gets_locality_in_geo_query(self):
+        # "Les Framboisines" pattern: venue name with no city → geo_query must include locality
+        soup = self._soup(BROCABRAC_VENUE_ONLY)
+        ev = _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")[0]
+        assert ev["location"] == "Les Framboisines"      # display: venue name
+        geo_query = ev.get("geo_query", "")
+        assert "Bullion" in geo_query                     # geocoding: includes city
+        assert "78720" in geo_query                       # geocoding: includes postcode
+
+    def test_no_geo_query_when_location_equals_query(self):
+        # If the geo_query would be the same as location, no extra field is stored
+        soup = self._soup(VIDEGRENIERS_JSONLD)
+        ev = _parse_jsonld(soup, "https://vide-greniers.org", "vide-greniers.org")[0]
+        # location has no structured address → geo_query == location → not stored
+        assert "geo_query" not in ev
 
     def test_vide_grenier_event_type(self):
         soup = self._soup(VIDEGRENIERS_JSONLD)
