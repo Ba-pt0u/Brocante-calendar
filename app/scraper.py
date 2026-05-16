@@ -8,7 +8,7 @@ import time
 import unicodedata
 from datetime import date, datetime
 from typing import Optional
-from urllib.parse import quote as url_quote
+from urllib.parse import quote as url_quote, urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -330,52 +330,133 @@ def _parse_cards(soup: BeautifulSoup, base_url: str, source_name: str, base_doma
     return events
 
 
+MAX_PAGES = 8  # safety cap per source
+
+
+def _find_next_page(soup: BeautifulSoup, current_url: str, base_domain: str) -> str | None:
+    """Return the absolute URL of the next page, or None if there isn't one."""
+    candidates = []
+
+    # <link rel="next"> (cleanest, RFC 5988)
+    tag = soup.find("link", rel="next")
+    if tag and tag.get("href"):
+        candidates.append(tag["href"])
+
+    # <a rel="next">
+    tag = soup.find("a", rel="next")
+    if tag and tag.get("href"):
+        candidates.append(tag["href"])
+
+    # Common CSS selectors for "next page" links
+    for sel in [
+        "a.next", "a.suivant", "a[aria-label='Suivant']", "a[aria-label='Next']",
+        ".pagination .next a", ".pagination li.active + li a",
+        "nav[aria-label*='ination'] a[rel='next']",
+        ".pager__item--next a", ".pager-next a",
+    ]:
+        tag = soup.select_one(sel)
+        if tag and tag.get("href"):
+            candidates.append(tag["href"])
+            break
+
+    for href in candidates:
+        href = href.strip()
+        if not href or href == "#":
+            continue
+        if href.startswith("http"):
+            return href
+        if href.startswith("/"):
+            return base_domain + href
+        # relative URL — join with current page
+        return urljoin(current_url, href)
+
+    return None
+
+
 async def _scrape_source(
     client: httpx.AsyncClient, url: str, source_name: str, base_domain: str
 ) -> tuple:
-    """Fetch and parse one source. Returns (events, result_info).
+    """Fetch and parse one source, following pagination up to MAX_PAGES.
 
-    Retries up to 3 times on network errors; HTTP errors (403, 500…) are not retried.
+    Retries up to 3 times on network errors for the first page only;
+    HTTP errors (403, 500…) are not retried.
     """
     start = time.monotonic()
     result: dict = {"count": 0, "strategy": None, "error": None, "duration_s": 0.0, "url": url}
+    all_events: list = []
+    current_url = url
+    seen_urls: set = {url}
 
-    for attempt in range(3):
-        try:
-            resp = await client.get(url, timeout=30)
-            resp.raise_for_status()
+    for page_num in range(MAX_PAGES):
+        # Fetch with retry only on the first page
+        resp = None
+        for attempt in range(3 if page_num == 0 else 1):
+            try:
+                resp = await client.get(current_url, timeout=30)
+                resp.raise_for_status()
+                break
+            except (httpx.TransportError, httpx.TimeoutException) as exc:
+                if attempt == 2 or page_num > 0:
+                    if page_num == 0:
+                        result["error"] = f"Network error: {type(exc).__name__}"
+                        result["duration_s"] = round(time.monotonic() - start, 2)
+                        logger.warning("Could not fetch %s after 3 attempts: %s", url, exc)
+                        return [], result
+                    resp = None
+                    break
+                await asyncio.sleep(2 ** attempt)
+            except httpx.HTTPStatusError as exc:
+                if page_num == 0:
+                    result["error"] = f"HTTP {exc.response.status_code}"
+                    result["duration_s"] = round(time.monotonic() - start, 2)
+                    logger.warning("HTTP error from %s: %s", url, exc)
+                    return [], result
+                resp = None
+                break
+            except Exception as exc:
+                if page_num == 0:
+                    result["error"] = str(exc)[:200]
+                    result["duration_s"] = round(time.monotonic() - start, 2)
+                    logger.warning("Could not fetch %s: %s", url, exc)
+                    return [], result
+                resp = None
+                break
+
+        if resp is None:
             break
-        except (httpx.TransportError, httpx.TimeoutException) as exc:
-            if attempt == 2:
-                result["error"] = f"Network error: {type(exc).__name__}"
-                result["duration_s"] = round(time.monotonic() - start, 2)
-                logger.warning("Could not fetch %s after 3 attempts: %s", url, exc)
-                return [], result
-            await asyncio.sleep(2 ** attempt)
-        except httpx.HTTPStatusError as exc:
-            result["error"] = f"HTTP {exc.response.status_code}"
-            result["duration_s"] = round(time.monotonic() - start, 2)
-            logger.warning("HTTP error from %s: %s", url, exc)
-            return [], result
-        except Exception as exc:
-            result["error"] = str(exc)[:200]
-            result["duration_s"] = round(time.monotonic() - start, 2)
-            logger.warning("Could not fetch %s: %s", url, exc)
-            return [], result
 
-    soup = BeautifulSoup(resp.text, "lxml")
-    events = _parse_jsonld(soup, url, source_name)
-    if events:
-        result["strategy"] = "json-ld"
-    else:
-        events = _parse_cards(soup, url, source_name, base_domain)
-        if events:
-            result["strategy"] = "css"
+        soup = BeautifulSoup(resp.text, "lxml")
 
-    result["count"] = len(events)
+        # Choose strategy: JSON-LD preferred, CSS cards as fallback (locked after page 1)
+        if page_num == 0:
+            events = _parse_jsonld(soup, current_url, source_name)
+            if events:
+                result["strategy"] = "json-ld"
+            else:
+                events = _parse_cards(soup, current_url, source_name, base_domain)
+                if events:
+                    result["strategy"] = "css"
+        elif result["strategy"] == "json-ld":
+            events = _parse_jsonld(soup, current_url, source_name)
+        else:
+            events = _parse_cards(soup, current_url, source_name, base_domain)
+
+        all_events.extend(events)
+        logger.debug("%-25s page %d → %d events", source_name, page_num + 1, len(events))
+
+        next_url = _find_next_page(soup, current_url, base_domain)
+        if not next_url or next_url in seen_urls:
+            break
+        seen_urls.add(next_url)
+        current_url = next_url
+
+    result["count"] = len(all_events)
     result["duration_s"] = round(time.monotonic() - start, 2)
-    logger.info("%-25s → %d events (strategy: %s)", source_name, len(events), result["strategy"])
-    return events, result
+    logger.info(
+        "%-25s → %d events (%d page(s), strategy: %s)",
+        source_name, len(all_events), len(seen_urls), result["strategy"],
+    )
+    return all_events, result
 
 
 # ──────────────────────────────────────────────

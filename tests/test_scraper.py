@@ -21,6 +21,7 @@ from app.scraper import (
     parse_french_date,
     _parse_jsonld,
     _parse_cards,
+    _find_next_page,
     _load_geocache,
     _save_geocache,
     _haversine_km,
@@ -287,6 +288,42 @@ class TestParseCards:
         soup = self._soup(EMPTY_HTML)
         events = _parse_cards(soup, "https://x.com", "test", "https://x.com")
         assert events == []
+
+
+# ── Unit: _find_next_page ─────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestFindNextPage:
+    def _soup(self, html):
+        return BeautifulSoup(html, "lxml")
+
+    def test_link_rel_next(self):
+        soup = self._soup('<html><head><link rel="next" href="/page/2/"></head><body></body></html>')
+        assert _find_next_page(soup, "https://brocabrac.fr/78/bullion/", "https://brocabrac.fr") \
+               == "https://brocabrac.fr/page/2/"
+
+    def test_a_rel_next(self):
+        soup = self._soup('<html><body><a rel="next" href="/78/bullion/?page=2">Suivant</a></body></html>')
+        assert _find_next_page(soup, "https://brocabrac.fr/78/bullion/", "https://brocabrac.fr") \
+               == "https://brocabrac.fr/78/bullion/?page=2"
+
+    def test_a_class_next(self):
+        soup = self._soup('<html><body><a class="next" href="/page/2">›</a></body></html>')
+        result = _find_next_page(soup, "https://brocabrac.fr/", "https://brocabrac.fr")
+        assert result == "https://brocabrac.fr/page/2"
+
+    def test_absolute_href_returned_as_is(self):
+        soup = self._soup('<html><body><a rel="next" href="https://other.fr/page/2">»</a></body></html>')
+        assert _find_next_page(soup, "https://brocabrac.fr/", "https://brocabrac.fr") \
+               == "https://other.fr/page/2"
+
+    def test_no_next_returns_none(self):
+        soup = self._soup('<html><body><p>Fin des résultats.</p></body></html>')
+        assert _find_next_page(soup, "https://brocabrac.fr/78/bullion/", "https://brocabrac.fr") is None
+
+    def test_empty_href_ignored(self):
+        soup = self._soup('<html><body><a rel="next" href="#">Suivant</a></body></html>')
+        assert _find_next_page(soup, "https://x.com/", "https://x.com") is None
 
 
 # ── Unit: deduplication logic ──────────────────────────────────────────────────
