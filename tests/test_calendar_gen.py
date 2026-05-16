@@ -399,3 +399,76 @@ class TestEventProperties:
     def test_ics_starts_with_vcalendar(self):
         raw = generate_ics([BASE_EVENT], BASE_CONFIG)
         assert raw.startswith(b"BEGIN:VCALENDAR")
+
+    def test_invalid_date_parsed_does_not_raise(self):
+        """generate_ics must return a valid ICS even when date_parsed is malformed."""
+        ev = {**BASE_EVENT, "date_parsed": "not-a-date"}
+        raw = generate_ics([ev], BASE_CONFIG)
+        assert raw.startswith(b"BEGIN:VCALENDAR")
+        cal = _parse_ics(raw)
+        vevents = _vevents(cal)
+        assert len(vevents) == 1
+        assert vevents[0].get("DTSTART") is None
+
+    def test_invalid_date_parsed_logs_warning(self, caplog):
+        """generate_ics must log a warning with event title and raw date value."""
+        import logging
+        ev = {**BASE_EVENT, "title": "Brocante Test", "date_parsed": "32-13-2099"}
+        with caplog.at_level(logging.WARNING, logger="app.calendar_gen"):
+            generate_ics([ev], BASE_CONFIG)
+        assert any(
+            "Brocante Test" in r.message and "32-13-2099" in r.message
+            for r in caplog.records
+        )
+
+
+# ── generate_ics — malformed / unparseable dates ──────────────────────────────
+
+@pytest.mark.unit
+class TestGenerateIcsMalformedDate:
+    """generate_ics() must never raise even when date_parsed is garbage."""
+
+    def _ics(self, date_value):
+        ev = {**BASE_EVENT, "date_parsed": date_value}
+        return generate_ics([ev], BASE_CONFIG)
+
+    def _is_valid_ics(self, raw: bytes) -> bool:
+        cal = _parse_ics(raw)
+        return cal.get("VERSION") is not None
+
+    def test_not_a_date_string_no_exception(self):
+        """An event with date_parsed='not-a-date' must not raise."""
+        raw = self._ics("not-a-date")
+        assert self._is_valid_ics(raw)
+
+    def test_not_a_date_string_returns_valid_ics(self):
+        """The returned bytes must be a parseable iCal calendar."""
+        raw = self._ics("not-a-date")
+        assert raw.startswith(b"BEGIN:VCALENDAR")
+        assert b"END:VCALENDAR" in raw
+
+    def test_none_date_no_exception(self):
+        """An event with date_parsed=None must not raise."""
+        raw = self._ics(None)
+        assert self._is_valid_ics(raw)
+
+    def test_none_date_event_still_included(self):
+        """Event with None date is still serialised (without DTSTART/VALARM)."""
+        raw = self._ics(None)
+        assert BASE_EVENT["title"].encode() in raw
+
+    def test_none_date_no_valarm(self):
+        """No VALARM should be added when date_parsed is None."""
+        raw = self._ics(None)
+        assert b"VALARM" not in raw
+
+    def test_invalid_iso_date_no_exception(self):
+        """An event with date_parsed='2026-99-99' (impossible date) must not raise."""
+        raw = self._ics("2026-99-99")
+        assert self._is_valid_ics(raw)
+
+    def test_invalid_iso_date_returns_valid_ics(self):
+        """The returned bytes must be a parseable iCal calendar."""
+        raw = self._ics("2026-99-99")
+        assert raw.startswith(b"BEGIN:VCALENDAR")
+        assert b"END:VCALENDAR" in raw

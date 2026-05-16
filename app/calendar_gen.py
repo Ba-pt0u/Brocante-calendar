@@ -1,8 +1,11 @@
 import hashlib
+import logging
 import re
 from datetime import date, timedelta
 
 from icalendar import Alarm, Calendar, Event, vText
+
+logger = logging.getLogger(__name__)
 
 # ── Type → emoji + label ─────────────────────────────────────────────────────
 # Set A chosen by user:  🛍️ brocante · 📦 vide-grenier · 🏷️ braderie
@@ -157,7 +160,11 @@ def generate_ics(events: list, config: dict) -> bytes:
                 vevent.add("dtstart", event_date)
                 vevent.add("dtend", event_date)
             except ValueError:
-                pass
+                logger.warning(
+                    "Malformed date for event %r: %r — skipping date fields",
+                    ev.get("title", "?"),
+                    raw_date,
+                )
 
         # ── Location ────────────────────────────────────────────────────────
         location = ev.get("location", "")

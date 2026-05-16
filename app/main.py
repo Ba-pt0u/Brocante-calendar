@@ -27,6 +27,7 @@ _state: dict[str, Any] = {
     "last_refresh": None,
     "is_refreshing": False,
     "refresh_count": 0,
+    "ics_cache": {},  # keyed by normalised types string → {"etag": str, "content": bytes}
 }
 _scheduler = AsyncIOScheduler()
 
@@ -56,6 +57,7 @@ async def _do_refresh() -> None:
         save_events(events)
         _state["last_refresh"] = datetime.now().isoformat()
         _state["refresh_count"] += 1
+        _state["ics_cache"] = {}  # invalidate all cached ICS feeds
         logger.info("Refresh complete: %d events", len(events))
     except Exception:
         logger.exception("Refresh failed")
@@ -108,14 +110,25 @@ async def ics_feed(request: Request, types: Optional[str] = None):
     config = load_config()
     events = load_events()
 
+    # Normalise the types filter into a stable cache key
+    type_set: set[str] = set()
     if types:
         type_set = {t.strip() for t in types.split(",") if t.strip() in _VALID_TYPES}
-        if type_set:
-            events = [e for e in events if e.get("ev_type", "autre") in type_set]
-            config = {**config, "types": sorted(type_set)}
+    cache_key = ",".join(sorted(type_set))  # "" means no filter
 
-    ics_bytes = generate_ics(events, config)
-    etag = f'"{hashlib.md5(ics_bytes).hexdigest()}"'
+    if type_set:
+        events = [e for e in events if e.get("ev_type", "autre") in type_set]
+        config = {**config, "types": sorted(type_set)}
+
+    cached = _state["ics_cache"].get(cache_key)
+    if cached is None:
+        ics_bytes = generate_ics(events, config)
+        etag = f'"{hashlib.md5(ics_bytes).hexdigest()}"'
+        _state["ics_cache"][cache_key] = {"etag": etag, "content": ics_bytes}
+    else:
+        ics_bytes = cached["content"]
+        etag = cached["etag"]
+
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304)
     return Response(
@@ -147,6 +160,7 @@ async def api_post_config(body: ConfigPayload):
         # Purge immediately so the UI doesn't show stale events from the old location
         save_events([])
         _state["last_refresh"] = None
+        _state["ics_cache"] = {}  # invalidate all cached ICS feeds
     _reschedule(body.refresh_hours)
     asyncio.create_task(_do_refresh())
     return {"status": "ok", "message": "Config saved, refresh started", "purged": location_changed}
@@ -167,6 +181,7 @@ async def api_purge_events():
     """Purge all cached events. The next scheduled refresh will repopulate."""
     save_events([])
     _state["last_refresh"] = None
+    _state["ics_cache"] = {}  # invalidate all cached ICS feeds
     return {"status": "ok", "message": "Events purged"}
 
 

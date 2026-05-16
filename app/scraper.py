@@ -429,6 +429,12 @@ async def _scrape_source(
                 break
 
         if resp is None:
+            logger.warning(
+                "%-25s pagination stopped at page %d — %d event(s) collected so far",
+                source_name,
+                page_num + 1,
+                len(all_events),
+            )
             break
 
         soup = BeautifulSoup(resp.text, "lxml")

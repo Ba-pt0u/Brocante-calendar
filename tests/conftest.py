@@ -32,6 +32,7 @@ def reset_app_state():
     main._state["is_refreshing"] = False
     main._state["last_refresh"]  = None
     main._state["refresh_count"] = 0
+    main._state["ics_cache"]     = {}
     scraper._last_scrape_results.clear()
     yield
 

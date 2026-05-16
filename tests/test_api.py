@@ -73,10 +73,12 @@ class TestIcsFeed:
         assert resp2.status_code == 304
 
     def test_different_content_gives_different_etag(self, client, isolated_data):
+        import app.main as m
         resp1 = client.get("/feed.ics")
         etag1 = resp1.headers["etag"]
         save_events([{"title": "Brocante", "date_parsed": "2026-08-01",
                       "location": "Paris", "uid": "u1", "source": "s"}])
+        m._state["ics_cache"] = {}  # direct save_events bypasses the API → invalidate manually
         resp2 = client.get("/feed.ics")
         etag2 = resp2.headers["etag"]
         assert etag1 != etag2
@@ -148,6 +150,122 @@ class TestIcsFeedTypeFilter:
         etag = resp1.headers["etag"]
         resp2 = client.get("/feed.ics?types=brocante", headers={"if-none-match": etag})
         assert resp2.status_code == 304
+
+
+# ── ICS ETag cache ────────────────────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestIcsEtagCache:
+    """Tests for the in-memory ICS cache (feature D)."""
+
+    _EVENTS = [
+        {"title": "Grande Brocante", "date_parsed": "2026-08-01", "location": "Lyon",
+         "uid": "u1", "source": "s", "ev_type": "brocante", "description": "", "url": ""},
+        {"title": "Vide-grenier Caluire", "date_parsed": "2026-08-02", "location": "Caluire",
+         "uid": "u2", "source": "s", "ev_type": "vide-grenier", "description": "", "url": ""},
+    ]
+
+    def test_cache_is_populated_after_first_request(self, client, isolated_data):
+        """After the first /feed.ics call the cache entry for '' should exist."""
+        import app.main as m
+        save_events(self._EVENTS)
+        assert m._state["ics_cache"] == {}
+        client.get("/feed.ics")
+        assert "" in m._state["ics_cache"]
+
+    def test_cache_hit_returns_same_etag(self, client, isolated_data):
+        """Two consecutive requests must return the same ETag (cache hit)."""
+        save_events(self._EVENTS)
+        etag1 = client.get("/feed.ics").headers["etag"]
+        etag2 = client.get("/feed.ics").headers["etag"]
+        assert etag1 == etag2
+
+    def test_cache_invalidated_after_purge(self, client, isolated_data):
+        """DELETE /api/events must clear the ICS cache."""
+        import app.main as m
+        save_events(self._EVENTS)
+        client.get("/feed.ics")          # populate cache
+        assert "" in m._state["ics_cache"]
+        client.delete("/api/events")
+        assert m._state["ics_cache"] == {}
+
+    def test_cache_invalidated_after_refresh(self, isolated_data, monkeypatch):
+        """After _do_refresh runs, the ICS cache must be empty."""
+        import app.main as m
+        import asyncio
+        from fastapi.testclient import TestClient
+
+        async def _fake_scrape(*a, **kw):
+            return self._EVENTS
+
+        monkeypatch.setattr("app.main.scrape_all", _fake_scrape)
+
+        with TestClient(m.app, raise_server_exceptions=True) as c:
+            m._state["ics_cache"] = {}
+            save_events(self._EVENTS)
+            c.get("/feed.ics")          # populates cache
+            assert "" in m._state["ics_cache"]
+
+            asyncio.get_event_loop().run_until_complete(m._do_refresh())
+            assert m._state["ics_cache"] == {}
+
+    def test_separate_cache_per_type_filter(self, client, isolated_data):
+        """Requests with different ?types= must use separate cache keys."""
+        import app.main as m
+        save_events(self._EVENTS)
+        client.get("/feed.ics")
+        client.get("/feed.ics?types=brocante")
+        assert "" in m._state["ics_cache"]
+        assert "brocante" in m._state["ics_cache"]
+        assert m._state["ics_cache"][""]["etag"] != m._state["ics_cache"]["brocante"]["etag"]
+
+    def test_cache_key_is_sorted_types(self, client, isolated_data):
+        """?types=vide-grenier,brocante and ?types=brocante,vide-grenier share the same cache."""
+        import app.main as m
+        save_events(self._EVENTS)
+        r1 = client.get("/feed.ics?types=vide-grenier,brocante")
+        r2 = client.get("/feed.ics?types=brocante,vide-grenier")
+        assert r1.headers["etag"] == r2.headers["etag"]
+        assert "brocante,vide-grenier" in m._state["ics_cache"]
+        assert len(m._state["ics_cache"]) == 1
+
+
+# ── ICS caching behaviour (TestIcsCaching) ────────────────────────────────────
+
+@pytest.mark.integration
+class TestIcsCaching:
+    _EVENTS = [
+        {"title": "Brocante Metz", "date_parsed": "2026-09-05",
+         "location": "Place Saint-Louis, Metz", "uid": "metz-001",
+         "source": "brocabrac.fr", "ev_type": "brocante",
+         "description": "", "url": "https://brocabrac.fr/1"},
+        {"title": "Vide-grenier Nancy", "date_parsed": "2026-09-12",
+         "location": "Place Stanislas, Nancy", "uid": "nancy-002",
+         "source": "vide-greniers.org", "ev_type": "vide-grenier",
+         "description": "", "url": "https://vide-greniers.org/2"},
+    ]
+
+    def test_two_successive_requests_return_same_etag(self, client, isolated_data):
+        """When events have not changed, two calls must return the same ETag."""
+        save_events(self._EVENTS)
+        etag1 = client.get("/feed.ics").headers["etag"]
+        etag2 = client.get("/feed.ics").headers["etag"]
+        assert etag1 == etag2
+
+    def test_etag_changes_after_delete_events(self, client, isolated_data):
+        """After DELETE /api/events the ICS content changes → ETag must differ."""
+        save_events(self._EVENTS)
+        etag_before = client.get("/feed.ics").headers["etag"]
+        client.delete("/api/events")
+        etag_after = client.get("/feed.ics").headers["etag"]
+        assert etag_before != etag_after
+
+    def test_type_filter_produces_different_etag_than_no_filter(self, client, isolated_data):
+        """?types=brocante returns a different subset than no filter → different ETag."""
+        save_events(self._EVENTS)
+        etag_all = client.get("/feed.ics").headers["etag"]
+        etag_filtered = client.get("/feed.ics?types=brocante").headers["etag"]
+        assert etag_all != etag_filtered
 
 
 # ── GET /api/config ───────────────────────────────────────────────────────────

@@ -118,3 +118,35 @@ class TestSaveEvents:
         save_events([{"title": "Braderie à Strasbourg", "uid": "u"}])
         loaded = load_events()
         assert loaded[0]["title"] == "Braderie à Strasbourg"
+
+
+@pytest.mark.unit
+class TestAtomicWrite:
+    def test_save_config_produces_valid_json(self, isolated_data):
+        """save_config() always writes a parseable JSON file."""
+        payload = {"lat": 47.2, "lng": -1.55, "city": "Nantes",
+                   "radius_km": 25, "refresh_hours": 8}
+        save_config(payload)
+        data = json.loads(cfg.CONFIG_FILE.read_text(encoding="utf-8"))
+        assert data == payload
+
+    def test_save_events_empty_then_load_returns_empty_list(self, isolated_data):
+        """save_events([]) followed by load_events() returns []."""
+        save_events([])
+        assert load_events() == []
+
+    def test_save_events_roundtrip(self, isolated_data):
+        """save_events(data) then load_events() returns the exact same data."""
+        events = [
+            {"title": "Brocante Rennes", "date_parsed": "2026-09-12",
+             "uid": "rennes-001", "source": "brocabrac.fr",
+             "location": "Place de la Mairie, Rennes",
+             "description": "Grande brocante annuelle", "url": "https://x.com/1"},
+            {"title": "Vide-grenier Bordeaux", "date_parsed": "2026-10-03",
+             "uid": "bx-002", "source": "vide-greniers.org",
+             "location": "Quai des Chartrons, Bordeaux",
+             "description": "", "url": "https://x.com/2"},
+        ]
+        save_events(events)
+        loaded = load_events()
+        assert loaded == events

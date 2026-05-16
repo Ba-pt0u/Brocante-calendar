@@ -930,6 +930,41 @@ async def test_live_brocabrac_url_structure():
     )
 
 
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_pagination_stops_on_page_error(httpx_mock, monkeypatch, isolated_data):
+    """Page 1 succeeds, page 2 raises a network timeout → events from page 1 returned, no crash."""
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
+
+    # Page 1 returns valid HTML with a "next page" link pointing to page 2
+    page1_html = BROCABRAC_JSONLD.replace(
+        "</head>",
+        '<link rel="next" href="https://brocabrac.fr/page/2/"></head>',
+    )
+
+    httpx_mock.add_response(
+        url=re.compile(r"https://brocabrac\.fr/(?!page).*"),
+        text=page1_html,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+    httpx_mock.add_exception(
+        httpx.TimeoutException("timed out"),
+        url="https://brocabrac.fr/page/2/",
+    )
+    httpx_mock.add_response(
+        url=re.compile(r"https://vide-greniers\.org/.*"),
+        text=EMPTY_HTML,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+
+    events = await scrape_all(45.764, 4.836, 30)
+
+    assert isinstance(events, list)
+    assert len(events) >= 1
+    titles = {e["title"] for e in events}
+    assert "Grande Brocante de Lyon" in titles
+
+
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_live_videgrenier_url_structure():

@@ -687,7 +687,7 @@ async function saveConfig() {
     }});
     toast('Scan lancé…', 'success');
     skeleton();
-    setTimeout(loadEvents, 3500);
+    pollUntilDone();
   } catch { toast('Erreur lors de la sauvegarde', 'error'); }
 
   btn.disabled = false; btn.textContent = 'Rechercher';
@@ -827,7 +827,7 @@ async function loadEvents() {
 function weekendISO() {
   const t = new Date(); t.setHours(0,0,0,0);
   const dow = t.getDay();
-  const toSat = dow === 0 ? 6 : 6 - dow;
+  const toSat = dow === 0 ? 6 : (dow === 6 ? 0 : 6 - dow);
   const sat = new Date(t); sat.setDate(t.getDate() + toSat);
   const sun = new Date(sat); sun.setDate(sat.getDate() + 1);
   return { sat: sat.toISOString().slice(0,10), sun: sun.toISOString().slice(0,10) };
@@ -1003,13 +1003,45 @@ function postalTag(ev) {
   return '';
 }
 
-/* ── City tag ── */
-function cityTag(ev) {
-  const city = ev.geo && ev.geo.city;
-  if (!city) return '';
-  // Don't duplicate if the city name is already visible in the location string
-  if ((ev.location || '').toLowerCase().includes(city.toLowerCase())) return '';
-  return `<span class="ev-city">${esc(city)}</span>`;
+/* ── Polling intelligent after refresh ── */
+function pollUntilDone() {
+  const dot = document.getElementById('sdot');
+  const txt = document.getElementById('stxt');
+  dot.className = 'dot pulse';
+  txt.textContent = 'Scan en cours…';
+
+  let prevLastRefresh = null;
+  let cycles = 0;
+  const MAX_CYCLES = 120; // 120 × 2 s = 240 s safety timeout
+
+  const handle = setInterval(async () => {
+    cycles++;
+    try {
+      const s = await api('/api/status');
+      if (!s.is_refreshing && s.last_refresh !== prevLastRefresh && prevLastRefresh !== null) {
+        clearInterval(handle);
+        dot.className = 'dot';
+        txt.textContent = `${s.event_count} événement${s.event_count !== 1 ? 's' : ''}`;
+        updateSourceStatus(s.sources || {});
+        await loadEvents();
+        return;
+      }
+      prevLastRefresh = s.last_refresh;
+      if (s.is_refreshing) {
+        dot.className = 'dot pulse';
+        txt.textContent = 'Scan en cours…';
+      }
+    } catch { /* ignore transient errors */ }
+
+    if (cycles >= MAX_CYCLES) {
+      clearInterval(handle);
+      dot.className = 'dot';
+      txt.textContent = 'Timeout — vérifiez le serveur';
+    }
+  }, 2000);
+
+  // Capture the current last_refresh immediately so we can detect the change
+  api('/api/status').then(s => { prevLastRefresh = s.last_refresh; }).catch(() => {});
 }
 
 /* ── Force refresh ── */
@@ -1017,10 +1049,8 @@ async function forceRefresh() {
   try {
     await api('/api/refresh', {method:'POST'});
     toast('Scan lancé…', 'info');
-    document.getElementById('sdot').className = 'dot pulse';
-    document.getElementById('stxt').textContent = 'Scan en cours…';
     skeleton();
-    setTimeout(loadEvents, 4500);
+    pollUntilDone();
   } catch { toast('Erreur réseau', 'error'); }
 }
 

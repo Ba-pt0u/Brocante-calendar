@@ -31,9 +31,9 @@ def load_config() -> dict:
 
 def save_config(config: dict) -> None:
     _ensure_data_dir()
-    CONFIG_FILE.write_text(
-        json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    tmp = CONFIG_FILE.with_suffix(CONFIG_FILE.suffix + ".tmp")
+    tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.rename(CONFIG_FILE)
 
 
 def load_events() -> list:
@@ -48,6 +48,6 @@ def load_events() -> list:
 
 def save_events(events: list) -> None:
     _ensure_data_dir()
-    EVENTS_FILE.write_text(
-        json.dumps(events, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    tmp = EVENTS_FILE.with_suffix(EVENTS_FILE.suffix + ".tmp")
+    tmp.write_text(json.dumps(events, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.rename(EVENTS_FILE)
