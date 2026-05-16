@@ -126,6 +126,16 @@ class TestBuildSummary:
         assert "Lyon" in summary
         assert "Grande Brocante de Lyon" in summary
 
+    def test_city_comes_before_type(self):
+        ev = {**BASE_EVENT, "ev_type": "brocante", "geo": {"lat": 45.76, "lng": 4.83, "city": "Lyon"}}
+        summary = _build_summary(ev)
+        assert summary.index("Lyon") < summary.index("Brocante")
+
+    def test_type_comes_before_original_title(self):
+        ev = {**BASE_EVENT, "ev_type": "brocante", "geo": {"lat": 45.76, "lng": 4.83, "city": "Lyon"}}
+        summary = _build_summary(ev)
+        assert summary.index("Brocante") < summary.index("Grande Brocante de Lyon")
+
     def test_context_emoji_appended_when_food(self):
         ev = {**BASE_EVENT, "description": "buvette sur place"}
         assert "🍕" in _build_summary(ev)

@@ -861,6 +861,24 @@ const TYPE_LABELS = {
   'bourse':      'Bourse',
   'marche-puces':'Marché aux puces',
 };
+const TYPE_EMOJIS = {
+  'brocante':    '🛍️',
+  'vide-grenier':'📦',
+  'braderie':    '🏷️',
+  'bourse':      '👗',
+  'marche-puces':'🐾',
+};
+
+function evCity(ev) {
+  if (ev.geo && ev.geo.city) return ev.geo.city;
+  const loc = ev.location || '';
+  const parts = loc.split(',');
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const c = parts[i].trim().replace(/^\d{4,5}\s*/, '').trim();
+    if (c.length >= 2 && c.length < 50) return c;
+  }
+  return '';
+}
 
 /* ── Tabs ── */
 function updateTabCounts(evs) {
@@ -956,20 +974,22 @@ function evHtml(ev, sat, sun, today, idx) {
 
   const src    = ev.source || '';
   const srcCls = src.includes('brocabrac') ? 'sb-bb' : src.includes('vide-grenier') ? 'sb-vg' : 'sb-xx';
-  const title  = ev.url
-    ? `<a class="ev-title" href="${esc(ev.url)}" target="_blank" rel="noopener">${esc(ev.title)}</a>`
-    : `<span class="ev-title">${esc(ev.title)}</span>`;
 
-  const t = evType(ev);
-  const typeLabel = TYPE_LABELS[t];
-  const typeBadge = typeLabel ? `<span class="sb sb-type-${t}">${typeLabel}</span>` : '';
+  const t      = evType(ev);
+  const emoji  = TYPE_EMOJIS[t] || '📅';
+  const city   = evCity(ev);
+  const prefix = city ? `${esc(city)} — ${emoji} ` : `${emoji} `;
+  const fullTitle = prefix + esc(ev.title);
+  const title  = ev.url
+    ? `<a class="ev-title" href="${esc(ev.url)}" target="_blank" rel="noopener">${fullTitle}</a>`
+    : `<span class="ev-title">${fullTitle}</span>`;
 
   return `<div class="ev" style="animation-delay:${idx*35}ms">
     <div class="${badgeCls}"><div class="day">${dayS}</div><div class="mon">${monS}</div></div>
     <div class="ev-body">
       <div class="ev-title-row">${title}${tb}</div>
-      ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}${postalTag(ev)}${cityTag(ev)}</div>`:''}
-      <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span>${typeBadge}</div>
+      ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}${postalTag(ev)}</div>`:''}
+      <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span></div>
     </div>
   </div>`;
 }

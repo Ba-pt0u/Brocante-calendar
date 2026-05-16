@@ -52,8 +52,8 @@ def _build_summary(ev: dict) -> str:
     """
     Build the iCal SUMMARY field.
 
-    Format:  {emoji} {Type label} — {Ville} — {Titre original} {ctx_emojis}
-    Example: 🛍️ Brocante — Saint-Arnoult — Grande Brocante annuelle 🍕
+    Format:  {Ville} — {emoji} {Type label} — {Titre original} {ctx_emojis}
+    Example: Saint-Arnoult — 🛍️ Brocante — Grande Brocante annuelle 🍕
 
     Falls back gracefully when city or type label are missing.
     """
@@ -68,12 +68,12 @@ def _build_summary(ev: dict) -> str:
 
     ctx = _context_emojis(ev.get("description", ""), title)
 
-    if label and city:
-        core = f"{emoji} {label} — {city} — {title}"
+    if city and label:
+        core = f"{city} — {emoji} {label} — {title}"
+    elif city:
+        core = f"{city} — {emoji} {title}"
     elif label:
         core = f"{emoji} {label} — {title}"
-    elif city:
-        core = f"{emoji} {city} — {title}"
     else:
         core = f"{emoji} {title}"
 
