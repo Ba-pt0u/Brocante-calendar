@@ -128,6 +128,28 @@
       margin-top: .5rem; font-size: .82rem; color: var(--gray); min-height: 1.1em;
     }
 
+    /* ── City autocomplete ── */
+    .ac-wrap { position: relative; }
+    .ac-list {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 200;
+      background: var(--cream); border: 1.5px solid var(--rust);
+      border-radius: var(--rs); box-shadow: 0 6px 20px rgba(0,0,0,.13);
+      max-height: 260px; overflow-y: auto; display: none;
+    }
+    .ac-list.open { display: block; }
+    .ac-item {
+      padding: .55rem .85rem; cursor: pointer; font-size: .88rem;
+      border-bottom: 1px solid rgba(0,0,0,.06);
+      display: flex; flex-direction: column; gap: .1rem;
+    }
+    .ac-item:last-child { border-bottom: none; }
+    .ac-item:hover, .ac-item.active {
+      background: var(--rust); color: #fff;
+    }
+    .ac-item:hover .ac-sub, .ac-item.active .ac-sub { color: rgba(255,255,255,.75); }
+    .ac-main { font-weight: 600; }
+    .ac-sub  { font-size: .75rem; color: var(--gray); }
+
     /* ── Buttons ── */
     .btn {
       padding: .55rem 1.2rem;
@@ -421,9 +443,14 @@
     <div class="form-row">
       <div class="fg fg-wide">
         <label for="city-inp">Ville ou adresse</label>
-        <input type="text" id="city-inp"
-               placeholder="Lyon, Bordeaux, 75001 Paris…"
-               onkeydown="if(event.key==='Enter')saveConfig()" />
+        <div class="ac-wrap">
+          <input type="text" id="city-inp"
+                 placeholder="Lyon, Bordeaux, 75001 Paris…"
+                 autocomplete="off"
+                 oninput="acInput()"
+                 onkeydown="acKey(event)" />
+          <div class="ac-list" id="ac-list"></div>
+        </div>
       </div>
       <div class="fg">
         <label for="radius-sel">Rayon</label>
@@ -604,12 +631,105 @@ async function saveConfig() {
   btn.disabled = false; btn.textContent = 'Rechercher';
 }
 
+/* ── Autocomplete ── */
+let _acTimer = null, _acIdx = -1, _acResults = [];
+
+function acInput() {
+  clearTimeout(_acTimer);
+  const q = document.getElementById('city-inp').value.trim();
+  if (q.length < 2) { acClose(); return; }
+  _acTimer = setTimeout(() => acFetch(q), 280);
+}
+
+async function acFetch(q) {
+  try {
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&countrycodes=fr&limit=6&addressdetails=1`,
+      { headers: {'Accept-Language':'fr'} }
+    );
+    _acResults = await r.json();
+    acRender();
+  } catch { acClose(); }
+}
+
+function acRender() {
+  const list = document.getElementById('ac-list');
+  if (!_acResults.length) { acClose(); return; }
+  _acIdx = -1;
+  list.innerHTML = _acResults.map((p, i) => {
+    const parts = p.display_name.split(',');
+    const main  = parts[0].trim();
+    const sub   = parts.slice(1, 3).map(s => s.trim()).filter(Boolean).join(', ');
+    const pc    = p.address && p.address.postcode ? ` (${p.address.postcode})` : '';
+    return `<div class="ac-item" data-i="${i}" onmousedown="acPick(${i})">
+      <span class="ac-main">${esc(main)}${esc(pc)}</span>
+      ${sub ? `<span class="ac-sub">${esc(sub)}</span>` : ''}
+    </div>`;
+  }).join('');
+  list.classList.add('open');
+}
+
+function acKey(e) {
+  const list = document.getElementById('ac-list');
+  const items = list.querySelectorAll('.ac-item');
+  if (!list.classList.contains('open')) {
+    if (e.key === 'Enter') { saveConfig(); return; }
+    return;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    _acIdx = Math.min(_acIdx + 1, items.length - 1);
+    acHighlight(items);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    _acIdx = Math.max(_acIdx - 1, -1);
+    acHighlight(items);
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    if (_acIdx >= 0) acPick(_acIdx); else saveConfig();
+  } else if (e.key === 'Escape') {
+    acClose();
+  }
+}
+
+function acHighlight(items) {
+  items.forEach((el, i) => el.classList.toggle('active', i === _acIdx));
+  if (_acIdx >= 0) items[_acIdx].scrollIntoView({block:'nearest'});
+}
+
+function acPick(i) {
+  const p     = _acResults[i];
+  const parts = p.display_name.split(',');
+  const city  = parts[0].trim();
+  const display = parts.slice(0,2).map(s=>s.trim()).join(', ');
+  document.getElementById('city-inp').value = display;
+  acClose();
+  setGeo(`✅ ${display} (${(+p.lat).toFixed(4)}, ${(+p.lon).toFixed(4)})`);
+  // Store resolved coords for immediate use when saveConfig() is called
+  window._acGeo = { lat: +p.lat, lng: +p.lon, city };
+}
+
+function acClose() {
+  document.getElementById('ac-list').classList.remove('open');
+  _acResults = []; _acIdx = -1;
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.ac-wrap')) acClose();
+});
+
 /* ── Geocoding ── */
 async function geocode(address) {
+  // If the user selected from autocomplete, reuse already-resolved coords
+  if (window._acGeo) {
+    const g = window._acGeo;
+    window._acGeo = null;
+    return g;
+  }
   setGeo('🔍 Géocodage en cours…');
   try {
     const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=fr&limit=1`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=fr&limit=1&addressdetails=1`,
       { headers: {'Accept-Language':'fr'} }
     );
     const d = await r.json();

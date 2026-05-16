@@ -23,6 +23,7 @@ from app.scraper import (
     _parse_cards,
     _load_geocache,
     _save_geocache,
+    _haversine_km,
     scrape_all,
     CARD_SELECTORS,
     _last_scrape_results,
@@ -277,6 +278,23 @@ class TestGeocache:
         _save_geocache(cache)
         assert _load_geocache()["place bellecour, lyon"]["postcode"] == "69001"
 
+
+# ── Unit: Haversine distance ───────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestHaversine:
+    def test_same_point_is_zero(self):
+        assert _haversine_km(48.86, 2.35, 48.86, 2.35) == pytest.approx(0.0)
+
+    def test_paris_to_lyon_approx(self):
+        # ~392 km by straight line
+        d = _haversine_km(48.8566, 2.3522, 45.764, 4.836)
+        assert 380 < d < 410
+
+    def test_symmetry(self):
+        a = _haversine_km(48.0, 2.0, 45.0, 5.0)
+        b = _haversine_km(45.0, 5.0, 48.0, 2.0)
+        assert a == pytest.approx(b)
 
 
 # ── Integration: scrape_all with mocked HTTP ──────────────────────────────────
@@ -557,6 +575,61 @@ async def test_geocoding_attaches_geo_to_events(httpx_mock, monkeypatch, isolate
 
     # Nominatim mock returns postcode "69001" — verify it propagates
     assert geocoded[0]["geo"]["postcode"] == "69001"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_distance_filter_drops_far_events(httpx_mock, monkeypatch, isolated_data):
+    """Events geocoded far beyond the radius must be dropped."""
+    # Nominatim returns Angers (47.47, -0.55) — ~370 km from Lyon (45.764, 4.836)
+    far_nominatim = json.dumps([{
+        "lat": "47.4736",
+        "lon": "-0.5542",
+        "display_name": "Angers, Maine-et-Loire, Pays de la Loire, France",
+        "address": {"postcode": "49000", "city": "Angers", "country": "France"},
+    }])
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),     text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(
+        url=re.compile(r"https://nominatim\.openstreetmap\.org/.*"),
+        text=far_nominatim,
+        headers={"Content-Type": "application/json"},
+        is_reusable=True,
+    )
+
+    async def _noop_sleep(_):
+        pass
+    monkeypatch.setattr("app.scraper.asyncio.sleep", _noop_sleep)
+
+    # Search from Lyon (45.764, 4.836) with radius 30 km — Angers is ~370 km away
+    events = await scrape_all(45.764, 4.836, 30)
+    # All events from BROCABRAC_JSONLD geocode to Angers → all should be dropped
+    geocoded = [e for e in events if e.get("geo")]
+    assert len(geocoded) == 0, "Events outside radius must be dropped after geocoding"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_distance_filter_keeps_close_events(httpx_mock, monkeypatch, isolated_data):
+    """Events geocoded within the radius must be kept."""
+    # Nominatim returns Lyon (45.764, 4.836) — same as search center
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),     text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(
+        url=re.compile(r"https://nominatim\.openstreetmap\.org/.*"),
+        text=NOMINATIM_RESPONSE,
+        headers={"Content-Type": "application/json"},
+        is_reusable=True,
+    )
+
+    async def _noop_sleep(_):
+        pass
+    monkeypatch.setattr("app.scraper.asyncio.sleep", _noop_sleep)
+
+    events = await scrape_all(45.764, 4.836, 30)
+    geocoded = [e for e in events if e.get("geo")]
+    assert len(geocoded) > 0, "Events within radius must be kept"
 
 
 # ── Live contract tests ────────────────────────────────────────────────────────
