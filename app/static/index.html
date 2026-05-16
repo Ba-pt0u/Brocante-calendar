@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>🛍️ Brocantes & Vide-Greniers</title>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     /* ── Design tokens ── */
     :root {
@@ -449,6 +451,27 @@
       color: var(--rust-dk); font-weight: 600;
     }
 
+    /* ── Search bar ── */
+    .search-bar { margin: 0.5rem 0 0.75rem; }
+    #ev-search {
+      width: 100%; padding: 0.5rem 0.75rem;
+      border: 2px solid var(--cream-dark); border-radius: 8px;
+      font-family: 'Source Sans 3', sans-serif;
+      font-size: 0.95rem; color: var(--ink);
+      background: var(--cream);
+      transition: border-color .18s, box-shadow .18s;
+      outline: none; box-sizing: border-box;
+    }
+    #ev-search:focus {
+      border-color: var(--rust);
+      box-shadow: 0 0 0 3px var(--rust-glow);
+    }
+
+    /* ── Map toggle button ── */
+    #map-toggle {
+      padding: .35rem .9rem; font-size: .78rem;
+    }
+
     /* ── Responsive ── */
     @media (max-width: 520px) {
       header { padding: 1.1rem 1rem; }
@@ -571,6 +594,14 @@
       <button class="tab" data-f="bourse">Bourses <span class="n" id="n-brs">0</span></button>
     </div>
 
+    <!-- Map view (hidden by default) -->
+    <div id="map-view" style="display:none; height:420px; border-radius:12px; overflow:hidden; margin-bottom:1rem;"></div>
+
+    <!-- Search bar -->
+    <div class="search-bar">
+      <input id="ev-search" type="text" placeholder="🔍 Rechercher par titre ou lieu…" oninput="onSearch()" autocomplete="off">
+    </div>
+
     <!-- List -->
     <div id="ev-list">
       <div class="skel-wrap">
@@ -596,6 +627,8 @@
   <button class="btn btn-secondary" onclick="purgeEvents()"
           style="padding:.35rem .9rem;font-size:.78rem;opacity:.7;"
           title="Vider la liste d'événements (le prochain scan la repopulera)">🗑 Purger</button>
+  <button class="btn btn-ghost" id="map-toggle" onclick="toggleMap()" title="Afficher la carte"
+          style="padding:.35rem .9rem;font-size:.78rem;">🗺️ Carte</button>
 </div>
 
 <div id="toasts"></div>
@@ -609,6 +642,9 @@ const MO_SHORT = ['jan','fév','mar','avr','mai','juin','juil','août','sep','oc
 let _events = [], _filter = 'all', _wasRefreshing = false;
 const _ICS_ALL_TYPES = ['brocante', 'vide-grenier', 'braderie', 'bourse'];
 let _icsTypes = new Set(_ICS_ALL_TYPES); // all selected by default
+
+/* ── Map state ── */
+let _map = null, _mapVisible = false, _mapMarkers = null;
 
 /* ── Boot ── */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -663,6 +699,7 @@ async function copyIcs() {
 async function loadConfig() {
   try {
     const c = await api('/api/config');
+    window._loadedConfig = c || {};
     document.getElementById('city-inp').value    = c.city         || '';
     document.getElementById('radius-sel').value  = c.radius_km    || 30;
     document.getElementById('refresh-sel').value = c.refresh_hours || 12;
@@ -811,6 +848,7 @@ async function loadEvents() {
   try {
     const d = await api('/api/events');
     _events = d.events || [];
+    window._loadedEvents = _events;
     updateStats(_events);
     updateTabCounts(_events);
     render(_events, _filter);
@@ -821,6 +859,7 @@ async function loadEvents() {
         `Mis à jour ${dt.toLocaleDateString('fr-FR')} ${dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
     }
   } catch {}
+  updateMap();
 }
 
 /* ── Stats ── */
@@ -984,7 +1023,7 @@ function evHtml(ev, sat, sun, today, idx) {
     ? `<a class="ev-title" href="${esc(ev.url)}" target="_blank" rel="noopener">${fullTitle}</a>`
     : `<span class="ev-title">${fullTitle}</span>`;
 
-  return `<div class="ev" style="animation-delay:${idx*35}ms">
+  return `<div class="ev" style="animation-delay:${idx*35}ms" data-title="${esc(ev.title)}" data-location="${esc(ev.location || '')}">
     <div class="${badgeCls}"><div class="day">${dayS}</div><div class="mon">${monS}</div></div>
     <div class="ev-body">
       <div class="ev-title-row">${title}${tb}</div>
@@ -1124,6 +1163,74 @@ function toast(msg, type='info') {
     el.style.animation = 'tout .25s ease forwards';
     setTimeout(() => el.remove(), 280);
   }, 3000);
+}
+
+/* ── Search ── */
+function onSearch() {
+  const q = document.getElementById('ev-search').value.trim().toLowerCase();
+  document.querySelectorAll('.ev').forEach(card => {
+    const title = (card.dataset.title || '').toLowerCase();
+    const loc   = (card.dataset.location || '').toLowerCase();
+    card.style.display = (!q || title.includes(q) || loc.includes(q)) ? '' : 'none';
+  });
+}
+
+/* ── Map ── */
+function toggleMap() {
+  _mapVisible = !_mapVisible;
+  const view = document.getElementById('map-view');
+  const btn  = document.getElementById('map-toggle');
+  view.style.display = _mapVisible ? 'block' : 'none';
+  btn.textContent    = _mapVisible ? '📋 Liste' : '🗺️ Carte';
+  if (_mapVisible && !_map) {
+    _map = L.map('map-view').setView([46.5, 2.3], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors', maxZoom: 18
+    }).addTo(_map);
+  }
+  if (_mapVisible) {
+    setTimeout(() => _map && _map.invalidateSize(), 100);
+    updateMap();
+  }
+}
+
+function updateMap() {
+  if (!_map) return;
+  if (_mapMarkers) { _mapMarkers.clearLayers(); }
+  _mapMarkers = L.layerGroup().addTo(_map);
+
+  const events = window._loadedEvents || [];
+  const cfg    = window._loadedConfig || {};
+
+  // Radius circle + centre marker
+  if (cfg.lat && cfg.lng && cfg.radius_km) {
+    L.circle([cfg.lat, cfg.lng], {
+      radius: cfg.radius_km * 1000,
+      color: '#B8481C', fillColor: '#B8481C', fillOpacity: 0.05, weight: 1.5
+    }).addTo(_mapMarkers);
+    L.circleMarker([cfg.lat, cfg.lng], {
+      radius: 6, color: '#B8481C', fillColor: '#B8481C', fillOpacity: 1
+    }).bindTooltip(cfg.city || 'Centre', {permanent: false}).addTo(_mapMarkers);
+  }
+
+  // Event markers
+  const bounds = [];
+  events.forEach(ev => {
+    if (!ev.geo || !ev.geo.lat || !ev.geo.lng) return;
+    const marker = L.circleMarker([ev.geo.lat, ev.geo.lng], {
+      radius: 7, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.8, weight: 1
+    });
+    const dateStr = ev.date_parsed || '?';
+    marker.bindPopup(`<strong>${ev.title || ''}</strong><br>${dateStr}<br><small>${ev.location || ''}</small>`);
+    marker.addTo(_mapMarkers);
+    bounds.push([ev.geo.lat, ev.geo.lng]);
+  });
+
+  if (bounds.length > 0) {
+    _map.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+  } else if (cfg.lat && cfg.lng) {
+    _map.setView([cfg.lat, cfg.lng], 10);
+  }
 }
 </script>
 </body>
