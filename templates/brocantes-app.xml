@@ -1,8 +1,4 @@
 <?xml version="1.0"?>
-<!--
-  Template Unraid — copie de templates/brocantes-app.xml
-  Source canonique : templates/brocantes-app.xml
--->
 <Container version="2">
   <Name>brocantes-app</Name>
   <Repository>ghcr.io/ba-pt0u/brocante-calendar:latest</Repository>
