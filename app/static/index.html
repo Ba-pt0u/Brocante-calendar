@@ -305,6 +305,13 @@
       margin-top: .15rem;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .ev-pc {
+      display: inline-block; font-size: .68rem; font-weight: 600;
+      background: var(--sage); color: #fff;
+      border-radius: 3px; padding: 0 .35rem;
+      margin-left: .35rem; vertical-align: middle; opacity: .88;
+      flex-shrink: 0;
+    }
     .ev-meta { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .3rem; }
     .sb {
       display: inline-block; font-size: .67rem; font-weight: 600;
@@ -750,10 +757,21 @@ function evHtml(ev, sat, sun, today, idx) {
     <div class="${badgeCls}"><div class="day">${dayS}</div><div class="mon">${monS}</div></div>
     <div class="ev-body">
       <div class="ev-title-row">${title}${tb}</div>
-      ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}</div>`:''}
+      ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}${postalTag(ev)}</div>`:''}
       <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span></div>
     </div>
   </div>`;
+}
+
+/* ── Postal code tag ── */
+function postalTag(ev) {
+  // 1. Try to extract from location string (e.g. "Salle des fêtes, 78120 Rambouillet")
+  const fromStr = (ev.location || '').match(/\b(\d{5})\b/);
+  if (fromStr) return `<span class="ev-pc">${fromStr[1]}</span>`;
+  // 2. Fall back to geocoded postcode
+  const fromGeo = ev.geo && ev.geo.postcode;
+  if (fromGeo) return `<span class="ev-pc">${fromGeo}</span>`;
+  return '';
 }
 
 /* ── Force refresh ── */

@@ -57,7 +57,7 @@ async def _geocode_batch(locations: list, cache: dict) -> None:
             try:
                 url = (
                     "https://nominatim.openstreetmap.org/search"
-                    f"?q={url_quote(loc)}&format=json&countrycodes=fr&limit=1"
+                    f"?q={url_quote(loc)}&format=json&countrycodes=fr&limit=1&addressdetails=1"
                 )
                 resp = await client.get(url, timeout=10)
                 data = resp.json()
@@ -71,12 +71,14 @@ async def _geocode_batch(locations: list, cache: dict) -> None:
                         if cleaned and 2 <= len(cleaned) < 50:
                             city = cleaned
                             break
+                    postcode = p.get("address", {}).get("postcode", "")
                     cache[key] = {
                         "lat": float(p["lat"]),
                         "lng": float(p["lon"]),
                         "city": city or parts[0],
+                        "postcode": postcode,
                     }
-                    logger.debug("Geocoded '%s' → %s", loc, cache[key]["city"])
+                    logger.debug("Geocoded '%s' → %s %s", loc, cache[key]["city"], postcode)
                 else:
                     cache[key] = None  # cache miss so we don't retry every refresh
             except Exception as exc:

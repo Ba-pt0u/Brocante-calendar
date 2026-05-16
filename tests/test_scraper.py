@@ -93,6 +93,7 @@ NOMINATIM_RESPONSE = json.dumps([{
     "lat": "45.7640",
     "lon": "4.8357",
     "display_name": "Lyon, Métropole de Lyon, Ain, France",
+    "address": {"postcode": "69001", "city": "Lyon", "country": "France"},
 }])
 
 
@@ -270,6 +271,12 @@ class TestGeocache:
         from app.scraper import _GEOCACHE_FILE
         _GEOCACHE_FILE.write_text("{ not json }", encoding="utf-8")
         assert _load_geocache() == {}
+
+    def test_postcode_stored_in_cache(self, isolated_data):
+        cache = {"place bellecour, lyon": {"lat": 45.76, "lng": 4.83, "city": "Lyon", "postcode": "69001"}}
+        _save_geocache(cache)
+        assert _load_geocache()["place bellecour, lyon"]["postcode"] == "69001"
+
 
 
 # ── Integration: scrape_all with mocked HTTP ──────────────────────────────────
@@ -546,6 +553,10 @@ async def test_geocoding_attaches_geo_to_events(httpx_mock, monkeypatch, isolate
     for ev in geocoded:
         assert "lat" in ev["geo"]
         assert "lng" in ev["geo"]
+        assert "postcode" in ev["geo"]
+
+    # Nominatim mock returns postcode "69001" — verify it propagates
+    assert geocoded[0]["geo"]["postcode"] == "69001"
 
 
 # ── Live contract tests ────────────────────────────────────────────────────────
