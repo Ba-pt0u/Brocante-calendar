@@ -485,6 +485,7 @@ async def test_scrape_all_jsonld_source(httpx_mock, monkeypatch, isolated_data):
         url=re.compile(r"https://brocabrac\.fr/.*"),
         text=BROCABRAC_JSONLD,
         headers={"Content-Type": "text/html; charset=utf-8"},
+        is_reusable=True,
     )
     httpx_mock.add_response(
         url=re.compile(r"https://vide-greniers\.org/.*"),
@@ -510,6 +511,7 @@ async def test_scrape_all_css_fallback(httpx_mock, monkeypatch, isolated_data):
         url=re.compile(r"https://brocabrac\.fr/.*"),
         text=BROCABRAC_CARDS,
         headers={"Content-Type": "text/html; charset=utf-8"},
+        is_reusable=True,
     )
     httpx_mock.add_response(
         url=re.compile(r"https://vide-greniers\.org/.*"),
@@ -531,9 +533,11 @@ async def test_scrape_all_deduplicates_across_sources(httpx_mock, monkeypatch, i
 
     # Return the same JSON-LD event from both sources
     httpx_mock.add_response(
-        url=re.compile(r"https://brocabrac\.fr/.*"), text=BROCABRAC_JSONLD)
+        url=re.compile(r"https://brocabrac\.fr/.*"), text=BROCABRAC_JSONLD,
+        is_reusable=True)
     httpx_mock.add_response(
-        url=re.compile(r"https://vide-greniers\.org/.*"), text=BROCABRAC_JSONLD)
+        url=re.compile(r"https://vide-greniers\.org/.*"), text=BROCABRAC_JSONLD,
+        is_reusable=True)
 
     events = await scrape_all(45.764, 4.836, 30)
     assert len(events) > 0, "Expected events to be returned"
@@ -546,7 +550,8 @@ async def test_scrape_all_deduplicates_across_sources(httpx_mock, monkeypatch, i
 async def test_scrape_all_sorted_by_date(httpx_mock, monkeypatch, isolated_data):
     monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
-    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),   text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),   text=BROCABRAC_JSONLD,
+                            is_reusable=True)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
 
     events = await scrape_all(45.764, 4.836, 30)
@@ -652,7 +657,8 @@ async def test_scrape_all_handles_http_error_gracefully(httpx_mock, monkeypatch,
     monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),    status_code=403)
-    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=BROCABRAC_JSONLD,
+                            is_reusable=True)
 
     events = await scrape_all(45.764, 4.836, 30)
     # Only vide-greniers events (from BROCABRAC_JSONLD reused) survive
@@ -666,7 +672,8 @@ async def test_source_results_populated_on_success(httpx_mock, monkeypatch, isol
     """_last_scrape_results is populated with per-source stats after a successful scrape."""
     monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
-    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      text=BROCABRAC_JSONLD,
+                            is_reusable=True)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
 
     await scrape_all(45.764, 4.836, 30)
@@ -711,7 +718,7 @@ async def test_retry_succeeds_after_transient_error(httpx_mock, monkeypatch, iso
     # pytest-httpx serves responses in order; first two are network errors
     httpx_mock.add_exception(httpx.ConnectError("refused"))        # attempt 1
     httpx_mock.add_exception(httpx.ConnectError("refused"))        # attempt 2
-    httpx_mock.add_response(text=BROCABRAC_JSONLD)                 # attempt 3 (success)
+    httpx_mock.add_response(text=BROCABRAC_JSONLD, is_reusable=True)  # attempt 3 (success)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
 
     events = await scrape_all(45.764, 4.836, 30)
@@ -746,7 +753,8 @@ async def test_all_retries_exhausted_records_error(httpx_mock, monkeypatch, isol
 @pytest.mark.asyncio
 async def test_geocoding_attaches_geo_to_events(httpx_mock, monkeypatch, isolated_data):
     """Geocoded results are attached to events as ev['geo']."""
-    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      text=BROCABRAC_JSONLD,
+                            is_reusable=True)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"),  text=EMPTY_HTML)
     # BROCABRAC_JSONLD has 2 distinct locations → up to 2 Nominatim calls
     httpx_mock.add_response(
@@ -785,7 +793,8 @@ async def test_distance_filter_drops_far_events(httpx_mock, monkeypatch, isolate
         "address": {"postcode": "49000", "city": "Angers", "country": "France"},
     }])
 
-    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),     text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),     text=BROCABRAC_JSONLD,
+                            is_reusable=True)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
     httpx_mock.add_response(
         url=re.compile(r"https://nominatim\.openstreetmap\.org/.*"),
@@ -810,7 +819,8 @@ async def test_distance_filter_drops_far_events(httpx_mock, monkeypatch, isolate
 async def test_distance_filter_keeps_close_events(httpx_mock, monkeypatch, isolated_data):
     """Events geocoded within the radius must be kept."""
     # Nominatim returns Lyon (45.764, 4.836) — same as search center
-    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),     text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),     text=BROCABRAC_JSONLD,
+                            is_reusable=True)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
     httpx_mock.add_response(
         url=re.compile(r"https://nominatim\.openstreetmap\.org/.*"),
@@ -1097,6 +1107,7 @@ async def test_one_source_down_other_still_returns_events(httpx_mock, monkeypatc
         url=re.compile(r"https://vide-greniers\.org/.*"),
         text=VIDEGRENIERS_JSONLD,
         headers={"Content-Type": "text/html; charset=utf-8"},
+        is_reusable=True,
     )
     events = await scrape_all(45.764, 4.836, 30)
     assert len(events) >= 1

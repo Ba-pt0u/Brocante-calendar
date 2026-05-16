@@ -8,7 +8,7 @@ import time
 import unicodedata
 from datetime import date, datetime
 from typing import Optional
-from urllib.parse import quote as url_quote, urljoin
+from urllib.parse import quote as url_quote, urljoin, urlparse, urlunparse, urlencode, parse_qs
 
 import httpx
 from bs4 import BeautifulSoup
@@ -392,6 +392,7 @@ async def _scrape_source(
     all_events: list = []
     current_url = url
     seen_urls: set = {url}
+    seen_event_uids: set = set()  # intra-source dedup + loop-back detection
 
     for page_num in range(MAX_PAGES):
         # Fetch with retry only on the first page
@@ -453,11 +454,29 @@ async def _scrape_source(
         else:
             events = _parse_cards(soup, current_url, source_name, base_domain)
 
-        all_events.extend(events)
-        logger.debug("%-25s page %d → %d events", source_name, page_num + 1, len(events))
+        # Only keep events not already collected (loop-back detection)
+        new_events = [ev for ev in events if ev.get("uid") not in seen_event_uids]
+        seen_event_uids.update(ev["uid"] for ev in new_events if ev.get("uid"))
+        all_events.extend(new_events)
+        logger.debug(
+            "%-25s page %d → %d events (%d new)",
+            source_name, page_num + 1, len(events), len(new_events),
+        )
 
         next_url = _find_next_page(soup, current_url, base_domain)
-        if not next_url or next_url in seen_urls:
+
+        # Speculative ?page=N for sites without <link rel="next"> (e.g. brocabrac.fr)
+        if next_url is None and new_events:
+            parsed_url = urlparse(current_url)
+            qs = parse_qs(parsed_url.query, keep_blank_values=True)
+            current_page = int(qs.get("page", ["1"])[0])
+            qs["page"] = [str(current_page + 1)]
+            next_url = urlunparse(parsed_url._replace(
+                query=urlencode({k: v[0] for k, v in qs.items()})
+            ))
+            logger.debug("%-25s no HTML pagination — speculative: %s", source_name, next_url)
+
+        if not next_url or next_url in seen_urls or not new_events:
             break
         seen_urls.add(next_url)
         current_url = next_url
