@@ -191,6 +191,13 @@ Chaque événement dans le calendrier iOS bénéficie de :
 | `POST` | `/api/refresh` | Forcer un nouveau scan |
 | `GET` | `/api/status` | Statut détaillé par source |
 
+## Interface web
+
+- **Recherche de ville** : saisie avec autocomplétion Nominatim (suggestions debounce 280 ms, navigation clavier ↑↓ Entrée Échap). Sélectionner une suggestion pré-remplit les coordonnées sans second appel réseau.
+- **Code postal** : affiché en badge vert à côté de la commune sur chaque événement (extrait de la chaîne de lieu ou du géocodage Nominatim).
+- **Purge des événements** : bouton dédié pour vider le cache, ou automatiquement à chaque changement de localisation/rayon.
+- **Statut des sources** : indicateur ✅/❌ par source (brocabrac.fr / vide-greniers.org) dans la barre de statut.
+
 ### Purge des événements
 
 **Automatique** : changer de localisation (`lat`/`lng`) ou de rayon via `POST /api/config`
