@@ -20,6 +20,22 @@ calendrier iPhone / macOS / Google Calendar.
 | Persistance | Fichiers JSON dans `./data/` (volume Docker) |
 | CI/CD | GitHub Actions → ghcr.io (multi-arch amd64 + arm64) |
 
+## Ports
+
+| Port | Sens | Rôle |
+|---|---|---|
+| **8000** | interne (conteneur) | Uvicorn écoute sur ce port — ne pas exposer directement |
+| **8642** | externe (hôte) | Port par défaut exposé sur la machine hôte → accès interface web et flux ICS |
+
+Le mapping par défaut est `8642:8000` (hôte:conteneur). Le port 8642 est arbitraire et peut être changé librement :
+
+```bash
+# Exemple : exposer sur le port 80 de l'hôte
+docker run -p 80:8000 ghcr.io/ba-pt0u/brocante-calendar:latest
+```
+
+Tous les endpoints (interface web, `/feed.ics`, `/api/*`) passent par le même port.
+
 ---
 
 ## Démarrage rapide
