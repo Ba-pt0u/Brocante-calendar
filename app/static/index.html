@@ -513,6 +513,7 @@
   <div class="sbar-l">
     <span><span class="dot" id="sdot"></span><span id="stxt">En attente…</span></span>
     <span id="rtxt" style="opacity:.6"></span>
+    <span id="source-status" style="opacity:.6;cursor:help;margin-left:.5rem;" title="Aucun scan effectué"></span>
   </div>
   <button class="btn btn-secondary" onclick="forceRefresh()"
           style="padding:.35rem .9rem;font-size:.78rem;">↻ Actualiser</button>
@@ -606,9 +607,11 @@ async function geocode(address) {
     );
     const d = await r.json();
     if (!d.length) { setGeo('❌ Localisation introuvable. Essayez une ville plus précise.'); return null; }
-    const p    = d[0];
-    const city = p.display_name.split(',').slice(0,2).join(', ');
-    setGeo(`✅ ${city} (${(+p.lat).toFixed(4)}, ${(+p.lon).toFixed(4)})`);
+    const p       = d[0];
+    const parts   = p.display_name.split(',');
+    const city    = parts[0].trim();           // commune name only → used in scraping URLs
+    const display = parts.slice(0,2).join(', '); // commune + department → shown in UI
+    setGeo(`✅ ${display} (${(+p.lat).toFixed(4)}, ${(+p.lon).toFixed(4)})`);
     return { lat:+p.lat, lng:+p.lon, city };
   } catch { setGeo('❌ Erreur réseau lors du géocodage.'); return null; }
 }
@@ -789,10 +792,26 @@ function startPolling() {
         if (_wasRefreshing) await loadEvents();
         dot.className = 'dot';
         txt.textContent = `${s.event_count} événement${s.event_count!==1?'s':''}`;
+        updateSourceStatus(s.sources || {});
       }
       _wasRefreshing = s.is_refreshing;
     } catch {}
   }, 9000);
+}
+
+/* ── Source status tooltip ── */
+function updateSourceStatus(sources) {
+  const el = document.getElementById('source-status');
+  if (!el) return;
+  const lines = Object.entries(sources).map(([name, s]) => {
+    if (s.error) return `❌ ${name}: ${s.error}`;
+    const strat = s.strategy ? ` (${s.strategy})` : '';
+    return `✅ ${name}: ${s.count} événements${strat}`;
+  });
+  el.title = lines.join('\n') || 'Aucun scan effectué';
+  const hasError = Object.values(sources).some(s => s.error);
+  el.textContent = hasError ? '⚠ sources' : `${Object.keys(sources).length} sources`;
+  el.style.color = hasError ? 'var(--rust)' : 'inherit';
 }
 
 /* ── Helpers ── */

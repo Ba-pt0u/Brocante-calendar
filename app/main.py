@@ -50,7 +50,8 @@ async def _do_refresh() -> None:
     try:
         config = load_config()
         events = await scrape_all(
-            config["lat"], config["lng"], config["radius_km"]
+            config["lat"], config["lng"], config["radius_km"],
+            city=config.get("city", ""),
         )
         save_events(events)
         _state["last_refresh"] = datetime.now().isoformat()

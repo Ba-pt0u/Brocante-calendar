@@ -268,7 +268,7 @@ async def _scrape_source(
     Retries up to 3 times on network errors; HTTP errors (403, 500…) are not retried.
     """
     start = time.monotonic()
-    result: dict = {"count": 0, "strategy": None, "error": None, "duration_s": 0.0}
+    result: dict = {"count": 0, "strategy": None, "error": None, "duration_s": 0.0, "url": url}
 
     for attempt in range(3):
         try:
@@ -311,7 +311,7 @@ async def _scrape_source(
 # ──────────────────────────────────────────────
 # Public entry point
 # ──────────────────────────────────────────────
-async def scrape_all(lat: float, lng: float, radius_km: int) -> list:
+async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> list:
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -322,9 +322,14 @@ async def scrape_all(lat: float, lng: float, radius_km: int) -> list:
         "Accept-Encoding": "gzip, deflate, br",
         "DNT": "1",
     }
+    # brocabrac.fr expects a city/address name in `localisation`, not raw coordinates.
+    # Use only the commune part (before the first comma) for a clean search term.
+    # vide-greniers.org uses explicit lat=/lng= parameters → coordinates are correct there.
+    brocabrac_city = city.split(",")[0].strip() if city else ""
+    brocabrac_location = url_quote(brocabrac_city) if brocabrac_city else f"{lat},{lng}"
     sources = [
         (
-            f"https://brocabrac.fr/brocantes-vide-greniers?localisation={lat},{lng}&rayon={radius_km}",
+            f"https://brocabrac.fr/brocantes-vide-greniers?localisation={brocabrac_location}&rayon={radius_km}",
             "brocabrac.fr",
             "https://brocabrac.fr",
         ),

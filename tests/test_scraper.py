@@ -362,6 +362,64 @@ async def test_scrape_all_sorted_by_date(httpx_mock, monkeypatch, isolated_data)
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_brocabrac_url_uses_city_name(httpx_mock, monkeypatch, isolated_data):
+    """When city is provided, brocabrac URL uses the city name (not raw coordinates)."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(48.59, 1.89, 30, city="Clairefontaine-en-Yvelines")
+
+    # brocabrac must have been called with the city name, not raw coordinates
+    brocabrac_req = next(
+        r for r in httpx_mock.get_requests() if "brocabrac.fr" in str(r.url)
+    )
+    assert "Clairefontaine" in str(brocabrac_req.url)
+    assert "48.59" not in str(brocabrac_req.url)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_brocabrac_url_falls_back_to_coords_without_city(httpx_mock, monkeypatch, isolated_data):
+    """When no city is configured, brocabrac URL falls back to lat,lng coordinates."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(48.59, 1.89, 30, city="")
+
+    brocabrac_req = next(
+        r for r in httpx_mock.get_requests() if "brocabrac.fr" in str(r.url)
+    )
+    assert "48.59" in str(brocabrac_req.url)
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_result_includes_url_field(httpx_mock, monkeypatch, isolated_data):
+    """_last_scrape_results stores the URL that was actually queried."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(45.764, 4.836, 30, city="Lyon")
+
+    assert "url" in _last_scrape_results["brocabrac.fr"]
+    assert "brocabrac.fr" in _last_scrape_results["brocabrac.fr"]["url"]
+    assert "url" in _last_scrape_results["vide-greniers.org"]
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_scrape_all_handles_http_error_gracefully(httpx_mock, monkeypatch, isolated_data):
     """A 403 or 500 on one source returns empty list for that source, not a crash."""
     async def _noop_geocode(locations, cache):
