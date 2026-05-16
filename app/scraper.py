@@ -3,7 +3,8 @@ import hashlib
 import json
 import logging
 import re
-from datetime import date
+import time
+from datetime import date, datetime
 from typing import Optional
 from urllib.parse import quote as url_quote
 
@@ -18,6 +19,9 @@ logger = logging.getLogger(__name__)
 # Geocache (persisted to data/geocache.json)
 # ──────────────────────────────────────────────
 _GEOCACHE_FILE = DATA_DIR / "geocache.json"
+
+# Per-source scrape results (populated after each scrape_all call)
+_last_scrape_results: dict = {}
 
 
 def _load_geocache() -> dict:
@@ -258,19 +262,50 @@ def _parse_cards(soup: BeautifulSoup, base_url: str, source_name: str, base_doma
 
 async def _scrape_source(
     client: httpx.AsyncClient, url: str, source_name: str, base_domain: str
-) -> list:
-    try:
-        resp = await client.get(url, timeout=30)
-        resp.raise_for_status()
-    except Exception as exc:
-        logger.warning("Could not fetch %s: %s", url, exc)
-        return []
+) -> tuple:
+    """Fetch and parse one source. Returns (events, result_info).
+
+    Retries up to 3 times on network errors; HTTP errors (403, 500…) are not retried.
+    """
+    start = time.monotonic()
+    result: dict = {"count": 0, "strategy": None, "error": None, "duration_s": 0.0}
+
+    for attempt in range(3):
+        try:
+            resp = await client.get(url, timeout=30)
+            resp.raise_for_status()
+            break
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
+            if attempt == 2:
+                result["error"] = f"Network error: {type(exc).__name__}"
+                result["duration_s"] = round(time.monotonic() - start, 2)
+                logger.warning("Could not fetch %s after 3 attempts: %s", url, exc)
+                return [], result
+            await asyncio.sleep(2 ** attempt)
+        except httpx.HTTPStatusError as exc:
+            result["error"] = f"HTTP {exc.response.status_code}"
+            result["duration_s"] = round(time.monotonic() - start, 2)
+            logger.warning("HTTP error from %s: %s", url, exc)
+            return [], result
+        except Exception as exc:
+            result["error"] = str(exc)[:200]
+            result["duration_s"] = round(time.monotonic() - start, 2)
+            logger.warning("Could not fetch %s: %s", url, exc)
+            return [], result
+
     soup = BeautifulSoup(resp.text, "lxml")
     events = _parse_jsonld(soup, url, source_name)
-    if not events:
+    if events:
+        result["strategy"] = "json-ld"
+    else:
         events = _parse_cards(soup, url, source_name, base_domain)
-    logger.info("%-25s → %d events", source_name, len(events))
-    return events
+        if events:
+            result["strategy"] = "css"
+
+    result["count"] = len(events)
+    result["duration_s"] = round(time.monotonic() - start, 2)
+    logger.info("%-25s → %d events (strategy: %s)", source_name, len(events), result["strategy"])
+    return events, result
 
 
 # ──────────────────────────────────────────────
@@ -303,7 +338,10 @@ async def scrape_all(lat: float, lng: float, radius_km: int) -> list:
     all_events: list = []
     async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
         for url, name, domain in sources:
-            all_events.extend(await _scrape_source(client, url, name, domain))
+            src_events, src_result = await _scrape_source(client, url, name, domain)
+            src_result["last_run"] = datetime.now().isoformat()
+            _last_scrape_results[name] = src_result
+            all_events.extend(src_events)
 
     # Deduplicate
     seen: dict = {}

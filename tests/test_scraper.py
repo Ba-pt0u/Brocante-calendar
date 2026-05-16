@@ -25,6 +25,7 @@ from app.scraper import (
     _save_geocache,
     scrape_all,
     CARD_SELECTORS,
+    _last_scrape_results,
 )
 
 # ── HTML fixtures (future dates so past-event filter doesn't discard them) ────
@@ -374,6 +375,92 @@ async def test_scrape_all_handles_http_error_gracefully(httpx_mock, monkeypatch,
     # Only vide-greniers events (from BROCABRAC_JSONLD reused) survive
     assert isinstance(events, list)
     assert len(events) == 2
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_source_results_populated_on_success(httpx_mock, monkeypatch, isolated_data):
+    """_last_scrape_results is populated with per-source stats after a successful scrape."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      text=BROCABRAC_JSONLD)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(45.764, 4.836, 30)
+
+    assert "brocabrac.fr" in _last_scrape_results
+    r = _last_scrape_results["brocabrac.fr"]
+    assert r["count"] == 2
+    assert r["strategy"] == "json-ld"
+    assert r["error"] is None
+    assert "last_run" in r
+    assert "duration_s" in r
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_source_error_recorded_in_results(httpx_mock, monkeypatch, isolated_data):
+    """HTTP errors from a source are captured in _last_scrape_results."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      status_code=403)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(45.764, 4.836, 30)
+
+    assert _last_scrape_results["brocabrac.fr"]["error"] == "HTTP 403"
+    assert _last_scrape_results["vide-greniers.org"]["error"] is None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_retry_succeeds_after_transient_error(httpx_mock, monkeypatch, isolated_data):
+    """Two network failures followed by success → events returned, no crash."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    # Replace asyncio.sleep to avoid real delays during retry backoff
+    async def _noop_sleep(_):
+        pass
+    monkeypatch.setattr("app.scraper.asyncio.sleep", _noop_sleep)
+
+    # pytest-httpx serves responses in order; first two are network errors
+    httpx_mock.add_exception(httpx.ConnectError("refused"))        # attempt 1
+    httpx_mock.add_exception(httpx.ConnectError("refused"))        # attempt 2
+    httpx_mock.add_response(text=BROCABRAC_JSONLD)                 # attempt 3 (success)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    events = await scrape_all(45.764, 4.836, 30)
+    assert len(events) == 2
+    assert _last_scrape_results["brocabrac.fr"]["error"] is None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_all_retries_exhausted_records_error(httpx_mock, monkeypatch, isolated_data):
+    """Three consecutive network failures → error recorded, empty results, no crash."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    async def _noop_sleep(_):
+        pass
+    monkeypatch.setattr("app.scraper.asyncio.sleep", _noop_sleep)
+
+    httpx_mock.add_exception(httpx.ConnectError("refused"))  # attempt 1
+    httpx_mock.add_exception(httpx.ConnectError("refused"))  # attempt 2
+    httpx_mock.add_exception(httpx.ConnectError("refused"))  # attempt 3
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    events = await scrape_all(45.764, 4.836, 30)
+    assert isinstance(events, list)
+    assert _last_scrape_results["brocabrac.fr"]["error"] is not None
+    assert "Network error" in _last_scrape_results["brocabrac.fr"]["error"]
 
 
 @pytest.mark.integration

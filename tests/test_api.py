@@ -62,6 +62,25 @@ class TestIcsFeed:
         assert b"BEGIN:VCALENDAR" in resp.content
         assert b"END:VCALENDAR" in resp.content
 
+    def test_etag_header_present(self, client):
+        resp = client.get("/feed.ics")
+        assert "etag" in resp.headers
+
+    def test_conditional_get_returns_304(self, client):
+        resp1 = client.get("/feed.ics")
+        etag = resp1.headers["etag"]
+        resp2 = client.get("/feed.ics", headers={"if-none-match": etag})
+        assert resp2.status_code == 304
+
+    def test_different_content_gives_different_etag(self, client, isolated_data):
+        resp1 = client.get("/feed.ics")
+        etag1 = resp1.headers["etag"]
+        save_events([{"title": "Brocante", "date_parsed": "2026-08-01",
+                      "location": "Paris", "uid": "u1", "source": "s"}])
+        resp2 = client.get("/feed.ics")
+        etag2 = resp2.headers["etag"]
+        assert etag1 != etag2
+
 
 # ── GET /api/config ───────────────────────────────────────────────────────────
 
@@ -125,6 +144,34 @@ class TestPostConfig:
             payload = {k: v for k, v in self.VALID_PAYLOAD.items() if k != field}
             resp = client.post("/api/config", json=payload)
             assert resp.status_code == 422, f"Expected 422 when '{field}' is missing"
+
+    def test_lat_below_france_returns_422(self, client):
+        resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "lat": 39.0})
+        assert resp.status_code == 422
+
+    def test_lat_above_france_returns_422(self, client):
+        resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "lat": 52.0})
+        assert resp.status_code == 422
+
+    def test_lng_east_of_france_returns_422(self, client):
+        resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "lng": 15.0})
+        assert resp.status_code == 422
+
+    def test_lng_west_of_france_returns_422(self, client):
+        resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "lng": -10.0})
+        assert resp.status_code == 422
+
+    def test_radius_zero_returns_422(self, client):
+        resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "radius_km": 0})
+        assert resp.status_code == 422
+
+    def test_radius_too_large_returns_422(self, client):
+        resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "radius_km": 501})
+        assert resp.status_code == 422
+
+    def test_refresh_hours_zero_returns_422(self, client):
+        resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "refresh_hours": 0})
+        assert resp.status_code == 422
 
 
 # ── GET /api/events ───────────────────────────────────────────────────────────
@@ -194,3 +241,8 @@ class TestGetStatus:
         data = client.get("/api/status").json()
         assert isinstance(data["config"], dict)
         assert "city" in data["config"]
+
+    def test_sources_key_in_status(self, client):
+        data = client.get("/api/status").json()
+        assert "sources" in data
+        assert isinstance(data["sources"], dict)

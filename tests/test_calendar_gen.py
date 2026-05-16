@@ -206,6 +206,10 @@ class TestCalendarProperties:
         cal = self._cal()
         assert cal.get("X-PUBLISHED-TTL") is not None
 
+    def test_refresh_interval_present(self):
+        cal = self._cal()
+        assert cal.get("REFRESH-INTERVAL") is not None
+
     def test_empty_events_produces_valid_ics(self):
         raw = generate_ics([], BASE_CONFIG)
         cal = _parse_ics(raw)

@@ -27,11 +27,12 @@ def isolated_data(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_app_state():
-    """Prevent _state leaking between API tests."""
-    from app import main
+    """Prevent _state and scrape results leaking between tests."""
+    from app import main, scraper
     main._state["is_refreshing"] = False
     main._state["last_refresh"]  = None
     main._state["refresh_count"] = 0
+    scraper._last_scrape_results.clear()
     yield
 
 

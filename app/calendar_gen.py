@@ -68,6 +68,8 @@ def generate_ics(events: list, config: dict) -> bytes:
     cal.add("x-wr-calname", f"🛍️ Brocantes – {config.get('city', 'Ma ville')}")
     cal.add("x-wr-timezone", "Europe/Paris")
     cal.add("x-published-ttl", "PT12H")
+    # RFC 7986: hint to clients how often to re-fetch the feed
+    cal.add("refresh-interval", timedelta(hours=1))
     # Brand the subscribed calendar in iOS with a warm rust colour
     cal.add("x-apple-calendar-color", "#B8481C")
 

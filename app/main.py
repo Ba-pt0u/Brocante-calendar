@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -6,8 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
+from pydantic import BaseModel, Field
 
 from app.calendar_gen import generate_ics
 from app.config import load_config, load_events, save_config, save_events
@@ -27,6 +29,17 @@ _state: dict[str, Any] = {
     "refresh_count": 0,
 }
 _scheduler = AsyncIOScheduler()
+
+
+# ──────────────────────────────────────────────
+# Config validation model
+# ──────────────────────────────────────────────
+class ConfigPayload(BaseModel):
+    lat: float = Field(..., ge=41.0, le=51.5)
+    lng: float = Field(..., ge=-5.5, le=9.5)
+    city: str = Field(..., min_length=1)
+    radius_km: int = Field(..., gt=0, le=500)
+    refresh_hours: int = Field(..., ge=1, le=168)
 
 
 async def _do_refresh() -> None:
@@ -87,17 +100,21 @@ async def index():
 
 
 @app.get("/feed.ics", response_class=Response)
-async def ics_feed():
+async def ics_feed(request: Request):
     config = load_config()
     events = load_events()
     ics_bytes = generate_ics(events, config)
+    etag = f'"{hashlib.md5(ics_bytes).hexdigest()}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304)
     return Response(
         content=ics_bytes,
         media_type="text/calendar; charset=utf-8",
         headers={
             "Content-Disposition": 'attachment; filename="brocantes.ics"',
-            "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Pragma": "no-cache",
+            # no-cache: revalidate every time, but use ETag for conditional GET
+            "Cache-Control": "no-cache, must-revalidate",
+            "ETag": etag,
         },
     )
 
@@ -108,13 +125,9 @@ async def api_get_config():
 
 
 @app.post("/api/config")
-async def api_post_config(body: dict):
-    required = {"lat", "lng", "city", "radius_km", "refresh_hours"}
-    missing = required - body.keys()
-    if missing:
-        raise HTTPException(status_code=422, detail=f"Missing fields: {missing}")
-    save_config(body)
-    _reschedule(int(body.get("refresh_hours", 12)))
+async def api_post_config(body: ConfigPayload):
+    save_config(body.model_dump())
+    _reschedule(body.refresh_hours)
     asyncio.create_task(_do_refresh())
     return {"status": "ok", "message": "Config saved, refresh started"}
 
@@ -137,6 +150,7 @@ async def api_refresh():
 
 @app.get("/api/status")
 async def api_status():
+    from app.scraper import _last_scrape_results
     config = load_config()
     events = load_events()
     return {
@@ -145,4 +159,5 @@ async def api_status():
         "refresh_count": _state["refresh_count"],
         "event_count": len(events),
         "config": config,
+        "sources": dict(_last_scrape_results),
     }
