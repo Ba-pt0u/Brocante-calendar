@@ -26,6 +26,7 @@ from app.scraper import (
     _haversine_km,
     _slugify,
     _dept_from_postcode,
+    _classify_event,
     scrape_all,
     CARD_SELECTORS,
     _last_scrape_results,
@@ -150,6 +151,12 @@ class TestParseJsonld:
         assert ev["location"] == "Place Bellecour"
         assert ev["source"] == "brocabrac.fr"
         assert ev["url"] == "https://brocabrac.fr/event/123"
+        assert ev["ev_type"] == "brocante"
+
+    def test_vide_grenier_event_type(self):
+        soup = self._soup(VIDEGRENIERS_JSONLD)
+        ev = _parse_jsonld(soup, "https://vide-greniers.org", "vide-greniers.org")[0]
+        assert ev["ev_type"] == "vide-grenier"
 
     def test_single_event_object(self):
         soup = self._soup(VIDEGRENIERS_JSONLD)
@@ -337,6 +344,36 @@ class TestDeptFromPostcode:
         assert _dept_from_postcode("") == ""
         assert _dept_from_postcode("7") == ""
         assert _dept_from_postcode(None) == ""  # type: ignore[arg-type]
+
+
+# ── Unit: _classify_event ─────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestClassifyEvent:
+    def test_brocante(self):
+        assert _classify_event("Grande Brocante de printemps") == "brocante"
+
+    def test_vide_grenier(self):
+        assert _classify_event("Grand vide-grenier communal") == "vide-grenier"
+        assert _classify_event("Vide greniers du village") == "vide-grenier"
+
+    def test_braderie(self):
+        assert _classify_event("Braderie annuelle de la commune") == "braderie"
+
+    def test_bourse(self):
+        assert _classify_event("Bourse aux vêtements enfants") == "bourse"
+        assert _classify_event("Bourse aux jouets") == "bourse"
+
+    def test_marche_puces(self):
+        assert _classify_event("Marché aux puces") == "marche-puces"
+
+    def test_vide_grenier_beats_brocante(self):
+        # "vide-grenier" checked before "brocante"
+        assert _classify_event("Grande Brocante et Vide-Grenier") == "vide-grenier"
+
+    def test_autre(self):
+        assert _classify_event("Fête du village") == "autre"
+        assert _classify_event("") == "autre"
 
 
 # ── Integration: scrape_all with mocked HTTP ──────────────────────────────────

@@ -194,7 +194,9 @@ Chaque événement dans le calendrier iOS bénéficie de :
 ## Interface web
 
 - **Recherche de ville** : saisie avec autocomplétion Nominatim (suggestions debounce 280 ms, navigation clavier ↑↓ Entrée Échap). Sélectionner une suggestion pré-remplit les coordonnées sans second appel réseau.
-- **Code postal** : affiché en badge vert à côté de la commune sur chaque événement (extrait de la chaîne de lieu ou du géocodage Nominatim).
+- **Filtres par type** : onglets Brocante / Vide-grenier / Braderie / Bourse — classification automatique depuis le titre de l'événement, filtre client-side instantané avec compteurs.
+- **Ville dans les cartes** : la commune géocodée (Nominatim) est affichée en badge gris à côté du lieu, sauf si elle est déjà présente dans la chaîne de lieu.
+- **Code postal** : affiché en badge vert à côté du lieu (extrait de la chaîne de lieu ou du géocodage Nominatim).
 - **Purge des événements** : bouton dédié pour vider le cache, ou automatiquement à chaque changement de localisation/rayon.
 - **Statut des sources** : indicateur ✅/❌ par source (brocabrac.fr / vide-greniers.org) dans la barre de statut.
 

@@ -342,6 +342,19 @@
     .sb-bb { background: #FFF0E8; color: var(--rust);     border: 1px solid #F0C0A0; }
     .sb-vg { background: #EEF5EB; color: var(--sage-dk);  border: 1px solid #B0D0A0; }
     .sb-xx { background: var(--cream-mid); color: var(--ink-lt); border: 1px solid var(--cream-dark); }
+    /* Event type badges */
+    .sb-type-brocante   { background: #FFF0E8; color: var(--rust-dk);  border: 1px solid #F0C0A0; }
+    .sb-type-vide-grenier { background: #EEF5EB; color: var(--sage-dk); border: 1px solid #B0D0A0; }
+    .sb-type-braderie   { background: #F2EDFF; color: #5B3FA0;         border: 1px solid #C9B8F0; }
+    .sb-type-bourse     { background: #E8F4FF; color: #1A5FAE;         border: 1px solid #A0C8F0; }
+    .sb-type-marche-puces { background: #FFF8E6; color: #7A5800;       border: 1px solid #F0D880; }
+    /* City chip on location line */
+    .ev-city {
+      display: inline-block; font-size: .72rem; font-weight: 600;
+      background: var(--cream-mid); color: var(--ink-lt);
+      border: 1px solid var(--cream-dark); border-radius: 3px;
+      padding: 0 .35rem; margin-left: .3rem; vertical-align: middle;
+    }
 
     /* ── Count pill ── */
     .cpill {
@@ -526,7 +539,9 @@
       <button class="tab on" data-f="all">Tous <span class="n" id="n-all">0</span></button>
       <button class="tab" data-f="weekend">Week-end <span class="n" id="n-wknd">0</span></button>
       <button class="tab" data-f="brocante">Brocantes <span class="n" id="n-broc">0</span></button>
-      <button class="tab" data-f="vide">Vide-greniers <span class="n" id="n-vide">0</span></button>
+      <button class="tab" data-f="vide-grenier">Vide-greniers <span class="n" id="n-vide">0</span></button>
+      <button class="tab" data-f="braderie">Braderies <span class="n" id="n-brad">0</span></button>
+      <button class="tab" data-f="bourse">Bourses <span class="n" id="n-brs">0</span></button>
     </div>
 
     <!-- List -->
@@ -779,13 +794,36 @@ function updateStats(evs) {
   document.getElementById('s-src').textContent   = srcs.size || '0';
 }
 
+/* ── Event type helpers ── */
+function evType(ev) {
+  // Use backend-classified type when available; fall back to title heuristic
+  if (ev.ev_type && ev.ev_type !== 'autre') return ev.ev_type;
+  const t = (ev.title || '').toLowerCase();
+  if (/vide.?grenier/.test(t))              return 'vide-grenier';
+  if (/braderie/.test(t))                   return 'braderie';
+  if (/march[eé].{0,8}puce|puce de/.test(t)) return 'marche-puces';
+  if (/\bbourse\b/.test(t))                 return 'bourse';
+  if (/brocante/.test(t))                   return 'brocante';
+  return 'autre';
+}
+
+const TYPE_LABELS = {
+  'brocante':    'Brocante',
+  'vide-grenier':'Vide-grenier',
+  'braderie':    'Braderie',
+  'bourse':      'Bourse',
+  'marche-puces':'Marché aux puces',
+};
+
 /* ── Tabs ── */
 function updateTabCounts(evs) {
   const {sat,sun} = weekendISO();
   document.getElementById('n-all').textContent  = evs.length;
   document.getElementById('n-wknd').textContent = evs.filter(e=>e.date_parsed===sat||e.date_parsed===sun).length;
-  document.getElementById('n-broc').textContent = evs.filter(e=>(e.title||'').toLowerCase().includes('brocante')).length;
-  document.getElementById('n-vide').textContent = evs.filter(e=>/vide.?grenier/i.test(e.title||'')).length;
+  document.getElementById('n-broc').textContent = evs.filter(e=>evType(e)==='brocante').length;
+  document.getElementById('n-vide').textContent = evs.filter(e=>evType(e)==='vide-grenier').length;
+  document.getElementById('n-brad').textContent = evs.filter(e=>evType(e)==='braderie').length;
+  document.getElementById('n-brs').textContent  = evs.filter(e=>evType(e)==='bourse').length;
 }
 
 function initTabs() {
@@ -801,9 +839,11 @@ function initTabs() {
 
 function applyFilter(evs, f) {
   const {sat,sun} = weekendISO();
-  if (f === 'weekend') return evs.filter(e=>e.date_parsed===sat||e.date_parsed===sun);
-  if (f === 'brocante') return evs.filter(e=>(e.title||'').toLowerCase().includes('brocante'));
-  if (f === 'vide')     return evs.filter(e=>/vide.?grenier/i.test(e.title||''));
+  if (f === 'weekend')     return evs.filter(e=>e.date_parsed===sat||e.date_parsed===sun);
+  if (f === 'brocante')    return evs.filter(e=>evType(e)==='brocante');
+  if (f === 'vide-grenier')return evs.filter(e=>evType(e)==='vide-grenier');
+  if (f === 'braderie')    return evs.filter(e=>evType(e)==='braderie');
+  if (f === 'bourse')      return evs.filter(e=>evType(e)==='bourse');
   return evs;
 }
 
@@ -867,31 +907,42 @@ function evHtml(ev, sat, sun, today, idx) {
   else if (ev.date_parsed===sun) tb = `<span class="tb tb-wknd">Ce dimanche</span>`;
   else if (diff>1&&diff<=6)      tb = `<span class="tb tb-week">Dans ${diff}j</span>`;
 
-  const src   = ev.source || '';
+  const src    = ev.source || '';
   const srcCls = src.includes('brocabrac') ? 'sb-bb' : src.includes('vide-grenier') ? 'sb-vg' : 'sb-xx';
-  const title = ev.url
+  const title  = ev.url
     ? `<a class="ev-title" href="${esc(ev.url)}" target="_blank" rel="noopener">${esc(ev.title)}</a>`
     : `<span class="ev-title">${esc(ev.title)}</span>`;
+
+  const t = evType(ev);
+  const typeLabel = TYPE_LABELS[t];
+  const typeBadge = typeLabel ? `<span class="sb sb-type-${t}">${typeLabel}</span>` : '';
 
   return `<div class="ev" style="animation-delay:${idx*35}ms">
     <div class="${badgeCls}"><div class="day">${dayS}</div><div class="mon">${monS}</div></div>
     <div class="ev-body">
       <div class="ev-title-row">${title}${tb}</div>
-      ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}${postalTag(ev)}</div>`:''}
-      <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span></div>
+      ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}${postalTag(ev)}${cityTag(ev)}</div>`:''}
+      <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span>${typeBadge}</div>
     </div>
   </div>`;
 }
 
 /* ── Postal code tag ── */
 function postalTag(ev) {
-  // 1. Try to extract from location string (e.g. "Salle des fêtes, 78120 Rambouillet")
   const fromStr = (ev.location || '').match(/\b(\d{5})\b/);
   if (fromStr) return `<span class="ev-pc">${fromStr[1]}</span>`;
-  // 2. Fall back to geocoded postcode
   const fromGeo = ev.geo && ev.geo.postcode;
   if (fromGeo) return `<span class="ev-pc">${fromGeo}</span>`;
   return '';
+}
+
+/* ── City tag ── */
+function cityTag(ev) {
+  const city = ev.geo && ev.geo.city;
+  if (!city) return '';
+  // Don't duplicate if the city name is already visible in the location string
+  if ((ev.location || '').toLowerCase().includes(city.toLowerCase())) return '';
+  return `<span class="ev-city">${esc(city)}</span>`;
 }
 
 /* ── Force refresh ── */

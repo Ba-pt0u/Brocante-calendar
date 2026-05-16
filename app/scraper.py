@@ -115,6 +115,23 @@ def _dept_from_postcode(postcode: str) -> str:
     return postcode[:2]
 
 
+# ── Event type classification ──────────────────────────────────────────────────
+_TYPE_PATTERNS = [
+    ("vide-grenier", re.compile(r"vide.?grenier", re.IGNORECASE)),
+    ("braderie",     re.compile(r"braderie", re.IGNORECASE)),
+    ("marche-puces", re.compile(r"march[eé].{0,8}puce|puce de", re.IGNORECASE)),
+    ("bourse",       re.compile(r"\bbourse\b", re.IGNORECASE)),
+    ("brocante",     re.compile(r"brocante", re.IGNORECASE)),
+]
+
+
+def _classify_event(title: str) -> str:
+    for ev_type, pattern in _TYPE_PATTERNS:
+        if pattern.search(title):
+            return ev_type
+    return "autre"
+
+
 # ──────────────────────────────────────────────
 # Date parsing
 # ──────────────────────────────────────────────
@@ -245,6 +262,7 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
                     "url": item.get("url", base_url),
                     "uid": uid,
                     "source": source_name,
+                    "ev_type": _classify_event(title),
                 })
     return events
 
@@ -284,6 +302,7 @@ def _parse_cards(soup: BeautifulSoup, base_url: str, source_name: str, base_doma
                     "url": url,
                     "uid": uid,
                     "source": source_name,
+                    "ev_type": _classify_event(title),
                 })
         if events:
             break
