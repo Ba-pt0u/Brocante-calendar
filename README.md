@@ -187,8 +187,27 @@ Chaque événement dans le calendrier iOS bénéficie de :
 | `GET` | `/api/config` | Configuration actuelle |
 | `POST` | `/api/config` | Mettre à jour la config + refresh immédiat |
 | `GET` | `/api/events` | Liste des événements scrappés |
+| `DELETE` | `/api/events` | Purger tous les événements |
 | `POST` | `/api/refresh` | Forcer un nouveau scan |
 | `GET` | `/api/status` | Statut détaillé par source |
+
+### Purge des événements
+
+**Automatique** : changer de localisation (`lat`/`lng`) ou de rayon via `POST /api/config`
+purge immédiatement la liste — les anciens événements disparaissent sans attendre le scan.
+La réponse contient `"purged": true` pour confirmer.
+
+**Manuelle** : bouton 🗑 **Purger** dans l'interface, ou via l'API :
+
+```bash
+curl -X DELETE http://localhost:8642/api/events
+```
+
+Le prochain scan planifié (ou un `POST /api/refresh`) repopule la liste.
+
+> **Plusieurs localisations** : l'app gère actuellement une seule localisation à la fois.
+> Pour suivre plusieurs zones, lancer plusieurs instances Docker sur des ports différents,
+> chacune avec son propre `DATA_DIR`.
 
 ### POST /api/config — validation
 

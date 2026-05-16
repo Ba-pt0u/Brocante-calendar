@@ -126,10 +126,20 @@ async def api_get_config():
 
 @app.post("/api/config")
 async def api_post_config(body: ConfigPayload):
+    current = load_config()
+    location_changed = (
+        abs(current.get("lat", 0) - body.lat) > 0.01
+        or abs(current.get("lng", 0) - body.lng) > 0.01
+        or current.get("radius_km", 0) != body.radius_km
+    )
     save_config(body.model_dump())
+    if location_changed:
+        # Purge immediately so the UI doesn't show stale events from the old location
+        save_events([])
+        _state["last_refresh"] = None
     _reschedule(body.refresh_hours)
     asyncio.create_task(_do_refresh())
-    return {"status": "ok", "message": "Config saved, refresh started"}
+    return {"status": "ok", "message": "Config saved, refresh started", "purged": location_changed}
 
 
 @app.get("/api/events")
@@ -140,6 +150,14 @@ async def api_events():
         "count": len(events),
         "last_refresh": _state["last_refresh"],
     }
+
+
+@app.delete("/api/events")
+async def api_purge_events():
+    """Purge all cached events. The next scheduled refresh will repopulate."""
+    save_events([])
+    _state["last_refresh"] = None
+    return {"status": "ok", "message": "Events purged"}
 
 
 @app.post("/api/refresh")

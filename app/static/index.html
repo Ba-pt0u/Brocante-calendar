@@ -516,6 +516,9 @@
   </div>
   <button class="btn btn-secondary" onclick="forceRefresh()"
           style="padding:.35rem .9rem;font-size:.78rem;">↻ Actualiser</button>
+  <button class="btn btn-secondary" onclick="purgeEvents()"
+          style="padding:.35rem .9rem;font-size:.78rem;opacity:.7;"
+          title="Vider la liste d'événements (le prochain scan la repopulera)">🗑 Purger</button>
 </div>
 
 <div id="toasts"></div>
@@ -759,6 +762,16 @@ async function forceRefresh() {
     document.getElementById('stxt').textContent = 'Scan en cours…';
     skeleton();
     setTimeout(loadEvents, 4500);
+  } catch { toast('Erreur réseau', 'error'); }
+}
+
+/* ── Purge events ── */
+async function purgeEvents() {
+  if (!confirm('Vider toute la liste d\'événements ?\nLe prochain scan la repopulera automatiquement.')) return;
+  try {
+    await api('/api/events', {method:'DELETE'});
+    toast('Liste purgée', 'info');
+    loadEvents();
   } catch { toast('Erreur réseau', 'error'); }
 }
 

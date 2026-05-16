@@ -7,7 +7,7 @@ import json
 import pytest
 
 import app.config as cfg
-from app.config import save_events, save_config
+from app.config import save_events, save_config, load_events
 
 
 # ── GET / ─────────────────────────────────────────────────────────────────────
@@ -172,6 +172,50 @@ class TestPostConfig:
     def test_refresh_hours_zero_returns_422(self, client):
         resp = client.post("/api/config", json={**self.VALID_PAYLOAD, "refresh_hours": 0})
         assert resp.status_code == 422
+
+    def test_location_change_purges_events(self, client, isolated_data):
+        # Save Lyon config first, then switch to Paris — should purge
+        save_config(self.VALID_PAYLOAD)
+        save_events([{"uid": "old", "title": "Vieux événement", "date_parsed": "2026-07-01"}])
+        paris = {**self.VALID_PAYLOAD, "lat": 48.856, "lng": 2.352, "city": "Paris"}
+        resp = client.post("/api/config", json=paris)
+        assert resp.json()["purged"] is True
+        assert load_events() == []
+
+    def test_same_location_does_not_purge(self, client, isolated_data):
+        # Save same Lyon config, then repost it — should NOT purge
+        save_config(self.VALID_PAYLOAD)
+        save_events([{"uid": "keep", "title": "À garder", "date_parsed": "2026-07-01"}])
+        resp = client.post("/api/config", json=self.VALID_PAYLOAD)
+        assert resp.json()["purged"] is False
+        assert len(load_events()) == 1
+
+
+# ── DELETE /api/events ────────────────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestDeleteEvents:
+    def test_returns_200(self, client):
+        assert client.delete("/api/events").status_code == 200
+
+    def test_response_has_ok_status(self, client):
+        assert client.delete("/api/events").json()["status"] == "ok"
+
+    def test_clears_all_events(self, client, isolated_data):
+        save_events([{"uid": "a"}, {"uid": "b"}, {"uid": "c"}])
+        client.delete("/api/events")
+        assert load_events() == []
+
+    def test_resets_last_refresh(self, client, isolated_data):
+        import app.main as m
+        m._state["last_refresh"] = "2026-05-16T10:00:00"
+        client.delete("/api/events")
+        assert client.get("/api/status").json()["last_refresh"] is None
+
+    def test_idempotent_on_empty_list(self, client, isolated_data):
+        client.delete("/api/events")
+        client.delete("/api/events")
+        assert load_events() == []
 
 
 # ── GET /api/events ───────────────────────────────────────────────────────────
