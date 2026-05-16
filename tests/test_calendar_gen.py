@@ -151,6 +151,32 @@ class TestBuildSummary:
         summary = _build_summary(ev)
         assert "Événement" in summary
 
+    def test_no_duplicate_type_when_title_starts_with_label(self):
+        """'Vide-grenier de Breuillet' must not produce 'Vide-grenier — Vide-grenier de Breuillet'."""
+        ev = {**BASE_EVENT, "title": "Vide-grenier de Breuillet", "ev_type": "vide-grenier"}
+        summary = _build_summary(ev)
+        # "Vide-grenier" must appear at most once in the summary
+        assert summary.count("Vide-grenier") == 1
+
+    def test_no_duplicate_brocante_when_title_starts_with_it(self):
+        ev = {**BASE_EVENT, "title": "Brocante de Saint-Arnoult", "ev_type": "brocante"}
+        summary = _build_summary(ev)
+        assert summary.count("Brocante") == 1
+
+    def test_label_kept_when_title_does_not_start_with_it(self):
+        """'Grande Brocante de Lyon' → label 'Brocante' still displayed."""
+        ev = {**BASE_EVENT, "title": "Grande Brocante de Lyon", "ev_type": "brocante"}
+        assert "Brocante" in _build_summary(ev)
+        # "Brocante" appears at least twice: once as label, once in title
+        assert _build_summary(ev).count("Brocante") >= 2
+
+    def test_hyphen_vs_space_normalised_for_duplicate_check(self):
+        """'Vide grenier de X' (no hyphen) ≡ label 'Vide-grenier' → still deduped."""
+        ev = {**BASE_EVENT, "title": "Vide grenier de Breuillet", "ev_type": "vide-grenier"}
+        summary = _build_summary(ev)
+        # Label 'Vide-grenier' must not prefix a title already starting with same words
+        assert "Vide-grenier — Vide grenier" not in summary
+
 
 # ── _extract_city ──────────────────────────────────────────────────────────────
 

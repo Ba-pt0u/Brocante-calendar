@@ -379,7 +379,7 @@ def _find_next_page(soup: BeautifulSoup, current_url: str, base_domain: str) -> 
 
 
 async def _scrape_source(
-    client: httpx.AsyncClient, url: str, source_name: str, base_domain: str
+    client: httpx.AsyncClient, url: str, source_name: str, base_domain: str,
 ) -> tuple:
     """Fetch and parse one source, following pagination up to MAX_PAGES.
 
@@ -464,12 +464,13 @@ async def _scrape_source(
 
         next_url = _find_next_page(soup, current_url, base_domain)
 
-        # Speculative ?page=N for sites without <link rel="next"> (e.g. brocabrac.fr)
+        # Speculative ?p=N for sites without <link rel="next"> (brocabrac.fr uses ?p=)
         if next_url is None and new_events:
             parsed_url = urlparse(current_url)
             qs = parse_qs(parsed_url.query, keep_blank_values=True)
-            current_page = int(qs.get("page", ["1"])[0])
-            qs["page"] = [str(current_page + 1)]
+            current_page = int((qs.get("p") or qs.get("page") or ["1"])[0])
+            qs.pop("page", None)  # normalise: always use ?p=
+            qs["p"] = [str(current_page + 1)]
             next_url = urlunparse(parsed_url._replace(
                 query=urlencode({k: v[0] for k, v in qs.items()})
             ))
@@ -555,7 +556,12 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
         src_result["last_run"] = datetime.now().isoformat()
         return name, src_events, src_result
 
-    async with httpx.AsyncClient(headers=headers, follow_redirects=True) as client:
+    # brocabrac.fr reads the search radius from the BROCA_DISTANCE cookie.
+    # Use domain-restricted cookies so the cookie is only sent to brocabrac.fr.
+    jar = httpx.Cookies()
+    jar.set("BROCA_DISTANCE", str(radius_km), domain="brocabrac.fr")
+
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True, cookies=jar) as client:
         gathered = await asyncio.gather(*[
             _do_scrape(url, name, domain) for url, name, domain in sources
         ])

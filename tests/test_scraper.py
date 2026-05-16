@@ -652,6 +652,64 @@ async def test_result_includes_url_field(httpx_mock, monkeypatch, isolated_data)
 
 @pytest.mark.integration
 @pytest.mark.asyncio
+async def test_broca_distance_cookie_sent_to_brocabrac(httpx_mock, monkeypatch, isolated_data):
+    """BROCA_DISTANCE cookie must be sent to brocabrac.fr with the configured radius."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(48.59, 1.89, 25, city="Lyon")
+
+    broca_req = next(r for r in httpx_mock.get_requests() if "brocabrac.fr" in str(r.url))
+    cookie_header = broca_req.headers.get("cookie", "")
+    assert "BROCA_DISTANCE=25" in cookie_header, (
+        f"Expected BROCA_DISTANCE=25 in Cookie header, got: {cookie_header!r}"
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_broca_distance_cookie_not_sent_to_videgreniers(httpx_mock, monkeypatch, isolated_data):
+    """BROCA_DISTANCE cookie must NOT leak to vide-greniers.org."""
+    async def _noop_geocode(locations, cache):
+        pass
+    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"), text=EMPTY_HTML)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(48.59, 1.89, 25, city="Lyon")
+
+    vg_req = next(r for r in httpx_mock.get_requests() if "vide-greniers.org" in str(r.url))
+    cookie_header = vg_req.headers.get("cookie", "")
+    assert "BROCA_DISTANCE" not in cookie_header
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_speculative_pagination_uses_p_param(httpx_mock, monkeypatch, isolated_data):
+    """Speculative pagination must use ?p= (brocabrac.fr format), not ?page=."""
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"), text=BROCABRAC_JSONLD,
+                            is_reusable=True)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    await scrape_all(45.764, 4.836, 30)
+
+    broca_reqs = [r for r in httpx_mock.get_requests() if "brocabrac.fr" in str(r.url)]
+    # At least one speculative page 2 request should have been made
+    page2_reqs = [r for r in broca_reqs if "p=2" in str(r.url)]
+    assert len(page2_reqs) >= 1, "Speculative pagination should use ?p=2, not ?page=2"
+    # Must NOT use the old ?page= format
+    assert not any("page=2" in str(r.url) for r in broca_reqs), "Must use ?p= not ?page="
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
 async def test_scrape_all_handles_http_error_gracefully(httpx_mock, monkeypatch, isolated_data):
     """A 403 or 500 on one source returns empty list for that source, not a crash."""
     monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())

@@ -58,6 +58,8 @@ def _build_summary(ev: dict) -> str:
     Format:  {Ville} — {emoji} {Type label} — {Titre original} {ctx_emojis}
     Example: Saint-Arnoult — 🛍️ Brocante — Grande Brocante annuelle 🍕
 
+    The type label is suppressed when the title already starts with it
+    (e.g. "Vide-grenier de Breuillet" → no redundant "Vide-grenier —" prefix).
     Falls back gracefully when city or type label are missing.
     """
     title = (ev.get("title") or "Événement").strip()
@@ -65,6 +67,12 @@ def _build_summary(ev: dict) -> str:
     ev_type  = ev.get("ev_type") or "autre"
     emoji    = _TYPE_EMOJIS.get(ev_type, "📅")
     label    = _TYPE_LABELS.get(ev_type, "")
+
+    # Suppress label when title already starts with the same type word(s)
+    if label:
+        norm = lambda s: re.sub(r"[-\s]+", " ", s).lower()
+        if norm(title).startswith(norm(label)):
+            label = ""
 
     geo  = ev.get("geo") or {}
     city = (geo.get("city") or _extract_city(ev.get("location", ""))).strip()
