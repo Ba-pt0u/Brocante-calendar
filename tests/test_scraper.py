@@ -467,13 +467,19 @@ class TestClassifyEvent:
 
 # ── Integration: scrape_all with mocked HTTP ──────────────────────────────────
 
+def _make_geocode_mock(lat: float = 45.764, lng: float = 4.836):
+    """Return a _geocode_batch stub that fills the cache with nearby coordinates."""
+    async def _mock(locations, cache):
+        for loc in locations:
+            key = loc.strip().lower()
+            cache[key] = {"lat": lat, "lng": lng, "city": "Lyon", "postcode": "69001"}
+    return _mock
+
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scrape_all_jsonld_source(httpx_mock, monkeypatch, isolated_data):
     """scrape_all returns events parsed from JSON-LD."""
-    async def _noop_geocode(locations, cache):
-        pass
-    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     httpx_mock.add_response(
         url=re.compile(r"https://brocabrac\.fr/.*"),
@@ -498,9 +504,7 @@ async def test_scrape_all_jsonld_source(httpx_mock, monkeypatch, isolated_data):
 @pytest.mark.asyncio
 async def test_scrape_all_css_fallback(httpx_mock, monkeypatch, isolated_data):
     """scrape_all falls back to CSS selectors when no JSON-LD found."""
-    async def _noop_geocode(locations, cache):
-        pass
-    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     httpx_mock.add_response(
         url=re.compile(r"https://brocabrac\.fr/.*"),
@@ -523,9 +527,7 @@ async def test_scrape_all_css_fallback(httpx_mock, monkeypatch, isolated_data):
 @pytest.mark.asyncio
 async def test_scrape_all_deduplicates_across_sources(httpx_mock, monkeypatch, isolated_data):
     """Same event appearing on both sources is kept once."""
-    async def _noop_geocode(locations, cache):
-        pass
-    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     # Return the same JSON-LD event from both sources
     httpx_mock.add_response(
@@ -534,6 +536,7 @@ async def test_scrape_all_deduplicates_across_sources(httpx_mock, monkeypatch, i
         url=re.compile(r"https://vide-greniers\.org/.*"), text=BROCABRAC_JSONLD)
 
     events = await scrape_all(45.764, 4.836, 30)
+    assert len(events) > 0, "Expected events to be returned"
     uids = [e["uid"] for e in events]
     assert len(uids) == len(set(uids)), "Duplicate UIDs found after deduplication"
 
@@ -541,9 +544,7 @@ async def test_scrape_all_deduplicates_across_sources(httpx_mock, monkeypatch, i
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_scrape_all_sorted_by_date(httpx_mock, monkeypatch, isolated_data):
-    async def _noop_geocode(locations, cache):
-        pass
-    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),   text=BROCABRAC_JSONLD)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
@@ -623,6 +624,7 @@ async def test_brocabrac_url_uses_dept_slug_format(httpx_mock, monkeypatch, isol
     assert "/78/saint-arnoult-en-yvelines/" in url_str
     assert "localisation" not in url_str
     assert "48.591" not in url_str
+    assert "rayon=10" in url_str  # radius parameter forwarded to brocabrac
 
 
 @pytest.mark.integration
@@ -647,9 +649,7 @@ async def test_result_includes_url_field(httpx_mock, monkeypatch, isolated_data)
 @pytest.mark.asyncio
 async def test_scrape_all_handles_http_error_gracefully(httpx_mock, monkeypatch, isolated_data):
     """A 403 or 500 on one source returns empty list for that source, not a crash."""
-    async def _noop_geocode(locations, cache):
-        pass
-    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),    status_code=403)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=BROCABRAC_JSONLD)
@@ -664,9 +664,7 @@ async def test_scrape_all_handles_http_error_gracefully(httpx_mock, monkeypatch,
 @pytest.mark.asyncio
 async def test_source_results_populated_on_success(httpx_mock, monkeypatch, isolated_data):
     """_last_scrape_results is populated with per-source stats after a successful scrape."""
-    async def _noop_geocode(locations, cache):
-        pass
-    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      text=BROCABRAC_JSONLD)
     httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
@@ -703,9 +701,7 @@ async def test_source_error_recorded_in_results(httpx_mock, monkeypatch, isolate
 @pytest.mark.asyncio
 async def test_retry_succeeds_after_transient_error(httpx_mock, monkeypatch, isolated_data):
     """Two network failures followed by success → events returned, no crash."""
-    async def _noop_geocode(locations, cache):
-        pass
-    monkeypatch.setattr("app.scraper._geocode_batch", _noop_geocode)
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
 
     # Replace asyncio.sleep to avoid real delays during retry backoff
     async def _noop_sleep(_):

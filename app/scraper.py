@@ -43,8 +43,8 @@ def _save_geocache(cache: dict) -> None:
 
 
 async def _geocode_batch(locations: list, cache: dict) -> None:
-    """Geocode up to 25 uncached locations via Nominatim (max 1 req/sec)."""
-    to_fetch = [loc for loc in locations if loc and loc.strip().lower() not in cache][:25]
+    """Geocode uncached locations via Nominatim (max 1 req/sec, up to 100 per call)."""
+    to_fetch = [loc for loc in locations if loc and loc.strip().lower() not in cache][:100]
     if not to_fetch:
         return
 
@@ -255,7 +255,7 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
                     street = addr.get("streetAddress", "").strip()
                     # Display location: prefer venue name, fall back to locality
                     location = venue or locality
-                    # Geocoding query: full address gives Nominatim much better context
+                    # Primary geocoding query: full address gives Nominatim the best context
                     addr_part = f"{postcode} {locality}".strip() if (postcode or locality) else ""
                     if street and addr_part:
                         geo_query = f"{street}, {addr_part}"
@@ -265,8 +265,10 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
                         geo_query = addr_part or venue
                 else:
                     location = venue or (str(addr) if addr else "")
+                    addr_part = ""
             else:
                 location = str(loc_obj) if loc_obj else ""
+                addr_part = ""
             if not geo_query:
                 geo_query = location
             parsed = parse_french_date(start)
@@ -284,6 +286,10 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
                 }
                 if geo_query != location:
                     ev["geo_query"] = geo_query
+                # Fallback: just postcode+locality (drops confusing venue name that
+                # can mislead Nominatim). Only stored when different from geo_query.
+                if addr_part and addr_part != geo_query and addr_part != location:
+                    ev["geo_query_fallback"] = addr_part
                 events.append(ev)
     return events
 
@@ -494,7 +500,7 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
     city_slug = _slugify(brocabrac_city_raw)
 
     if dept and city_slug:
-        brocabrac_url = f"https://brocabrac.fr/{dept}/{city_slug}/"
+        brocabrac_url = f"https://brocabrac.fr/{dept}/{city_slug}/?rayon={radius_km}"
     elif brocabrac_city_raw:
         brocabrac_url = (
             f"https://brocabrac.fr/brocantes-vide-greniers"
@@ -534,31 +540,57 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
             seen[uid] = ev
     unique_events = sorted(seen.values(), key=lambda e: e.get("date_parsed", "9999-12-31"))
 
-    # ── Geocode event locations ───────────────────────────────────────────────
-    # Prefer geo_query (full address from JSON-LD) over bare venue name for geocoding.
+    # ── Geocode event locations — pass 1 : full address (venue + postcode + city) ──
     unique_queries = list({
-        ev.get("geo_query") or ev["location"]
+        ev.get("geo_query") or ev.get("location", "")
         for ev in unique_events
         if ev.get("geo_query") or ev.get("location")
     })
     await _geocode_batch(unique_queries, geocache)
-    _save_geocache(geocache)
+
+    def _assign_geo(ev: dict) -> None:
+        key = (ev.get("geo_query") or ev.get("location", "")).strip().lower()
+        if key and geocache.get(key):
+            ev["geo"] = geocache[key]
 
     for ev in unique_events:
-        query_key = (ev.get("geo_query") or ev.get("location", "")).strip().lower()
-        if query_key and geocache.get(query_key):
-            ev["geo"] = geocache[query_key]
+        _assign_geo(ev)
 
-    # ── Distance filter ───────────────────────────────────────────────────────
-    # Drop events whose geocoded location is clearly outside the requested radius.
-    # Events without geocoded coords pass through (we cannot verify their distance).
-    filtered = [
-        ev for ev in unique_events
-        if "geo" not in ev
-        or _haversine_km(lat, lng, ev["geo"]["lat"], ev["geo"]["lng"]) <= radius_km * 1.15
-    ]
+    # ── Geocode — pass 2 : postcode+city only (venue name can confuse Nominatim) ──
+    fallback_queries = list({
+        ev["geo_query_fallback"]
+        for ev in unique_events
+        if "geo" not in ev and ev.get("geo_query_fallback")
+    })
+    if fallback_queries:
+        await _geocode_batch(fallback_queries, geocache)
+        for ev in unique_events:
+            if "geo" not in ev and ev.get("geo_query_fallback"):
+                fb_key = ev["geo_query_fallback"].strip().lower()
+                if geocache.get(fb_key):
+                    ev["geo"] = geocache[fb_key]
+
+    _save_geocache(geocache)
+
+    # ── Distance filter (strict) ──────────────────────────────────────────────
+    # • geo present      → keep only if within radius × 1.15
+    # • address known but geocoding failed → DROP (can't verify, assume out of range)
+    # • no location at all → keep (can't filter, show anyway)
+    filtered = []
+    for ev in unique_events:
+        if "geo" in ev:
+            if _haversine_km(lat, lng, ev["geo"]["lat"], ev["geo"]["lng"]) <= radius_km * 1.15:
+                filtered.append(ev)
+        elif ev.get("location") or ev.get("geo_query"):
+            logger.debug(
+                "Distance filter: dropped un-geocoded '%s' (%s)",
+                ev.get("title", "?"), ev.get("location", ""),
+            )
+        else:
+            filtered.append(ev)  # no location info — can't filter
+
     dropped = len(unique_events) - len(filtered)
     if dropped:
-        logger.info("Distance filter: dropped %d event(s) outside %d km radius", dropped, radius_km)
+        logger.info("Distance filter: dropped %d event(s) outside/un-geocoded", dropped)
 
     return filtered
