@@ -429,6 +429,26 @@
     @keyframes tin  { from{transform:translateX(110%);opacity:0} to{transform:none;opacity:1} }
     @keyframes tout { from{transform:none;opacity:1} to{transform:translateX(110%);opacity:0} }
 
+    /* ── ICS type toggles ── */
+    .ics-types {
+      display: flex; flex-wrap: wrap; gap: .4rem;
+      margin-bottom: .8rem; padding-top: .1rem;
+    }
+    .ics-types-label {
+      width: 100%; font-size: .78rem; color: var(--gray);
+      margin-bottom: .1rem; font-weight: 600; letter-spacing: .03em;
+    }
+    .ics-type-btn {
+      border: 1.5px solid var(--cream-dark); background: var(--cream);
+      color: var(--gray); border-radius: 20px; padding: .22rem .8rem;
+      font-size: .82rem; cursor: pointer; transition: all .15s;
+      font-family: inherit;
+    }
+    .ics-type-btn.on {
+      border-color: var(--rust); background: var(--rust-glow);
+      color: var(--rust-dk); font-weight: 600;
+    }
+
     /* ── Responsive ── */
     @media (max-width: 520px) {
       header { padding: 1.1rem 1rem; }
@@ -506,13 +526,20 @@
       <span class="chev">▾</span>
     </div>
     <div class="coll-body" id="ics-body">
+      <div class="ics-types">
+        <div class="ics-types-label">Types d'événements à inclure</div>
+        <button class="ics-type-btn on" data-t="brocante"     onclick="toggleIcsType('brocante')">🛍️ Brocante</button>
+        <button class="ics-type-btn on" data-t="vide-grenier" onclick="toggleIcsType('vide-grenier')">📦 Vide-grenier</button>
+        <button class="ics-type-btn on" data-t="braderie"     onclick="toggleIcsType('braderie')">🏷️ Braderie</button>
+        <button class="ics-type-btn on" data-t="bourse"       onclick="toggleIcsType('bourse')">👗 Bourse</button>
+      </div>
       <div class="ics-row">
         <div class="ics-url" id="ics-url"></div>
         <button class="btn btn-ghost copy-btn" id="copy-btn" onclick="copyIcs()">
           <span class="copy-l">Copier</span>
           <span class="copy-d">✓ Copié</span>
         </button>
-        <a class="btn btn-secondary" href="/feed.ics" target="_blank"
+        <a class="btn btn-secondary" id="ics-open-btn" href="/feed.ics" target="_blank"
            style="text-decoration:none;display:inline-flex;align-items:center;">Ouvrir</a>
       </div>
       <div class="iphone-steps">
@@ -580,6 +607,8 @@ const MO_SHORT = ['jan','fév','mar','avr','mai','juin','juil','août','sep','oc
 
 /* ── State ── */
 let _events = [], _filter = 'all', _wasRefreshing = false;
+const _ICS_ALL_TYPES = ['brocante', 'vide-grenier', 'braderie', 'bourse'];
+let _icsTypes = new Set(_ICS_ALL_TYPES); // all selected by default
 
 /* ── Boot ── */
 document.addEventListener('DOMContentLoaded', async () => {
@@ -592,7 +621,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 /* ── ICS ── */
 function updateIcsUrl() {
-  document.getElementById('ics-url').textContent = `${location.origin}/feed.ics`;
+  const allSelected = _ICS_ALL_TYPES.every(t => _icsTypes.has(t));
+  const url = allSelected
+    ? `${location.origin}/feed.ics`
+    : `${location.origin}/feed.ics?types=${[..._icsTypes].sort().join(',')}`;
+  document.getElementById('ics-url').textContent = url;
+  document.getElementById('ics-open-btn').href = url;
+}
+function toggleIcsType(type) {
+  if (_icsTypes.has(type)) {
+    _icsTypes.delete(type);
+    // Prevent empty selection — reselect all
+    if (_icsTypes.size === 0) _icsTypes = new Set(_ICS_ALL_TYPES);
+  } else {
+    _icsTypes.add(type);
+  }
+  document.querySelectorAll('.ics-type-btn').forEach(btn => {
+    btn.classList.toggle('on', _icsTypes.has(btn.dataset.t));
+  });
+  updateIcsUrl();
 }
 function toggleIcs() {
   const t = document.getElementById('ics-trig');

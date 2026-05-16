@@ -127,7 +127,14 @@ def generate_ics(events: list, config: dict) -> bytes:
     cal.add("version", "2.0")
     cal.add("calscale", "GREGORIAN")
     cal.add("method", "PUBLISH")
-    cal.add("x-wr-calname", f"🛍️ Brocantes – {config.get('city', 'Ma ville')}")
+    city = config.get("city", "Ma ville")
+    types_filter = config.get("types")
+    if types_filter:
+        labels = [_TYPE_LABELS.get(t, t.capitalize()) for t in types_filter]
+        cal_name = f"🛍️ {' · '.join(labels)} – {city}"
+    else:
+        cal_name = f"🛍️ Brocantes – {city}"
+    cal.add("x-wr-calname", cal_name)
     cal.add("x-wr-timezone", "Europe/Paris")
     cal.add("x-published-ttl", "PT12H")
     cal.add("refresh-interval", timedelta(hours=1))

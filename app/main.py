@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException, Request
@@ -100,10 +100,20 @@ async def index():
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
+_VALID_TYPES = {"brocante", "vide-grenier", "braderie", "bourse", "marche-puces", "autre"}
+
+
 @app.get("/feed.ics", response_class=Response)
-async def ics_feed(request: Request):
+async def ics_feed(request: Request, types: Optional[str] = None):
     config = load_config()
     events = load_events()
+
+    if types:
+        type_set = {t.strip() for t in types.split(",") if t.strip() in _VALID_TYPES}
+        if type_set:
+            events = [e for e in events if e.get("ev_type", "autre") in type_set]
+            config = {**config, "types": sorted(type_set)}
+
     ics_bytes = generate_ics(events, config)
     etag = f'"{hashlib.md5(ics_bytes).hexdigest()}"'
     if request.headers.get("if-none-match") == etag:
@@ -113,7 +123,6 @@ async def ics_feed(request: Request):
         media_type="text/calendar; charset=utf-8",
         headers={
             "Content-Disposition": 'attachment; filename="brocantes.ics"',
-            # no-cache: revalidate every time, but use ETag for conditional GET
             "Cache-Control": "no-cache, must-revalidate",
             "ETag": etag,
         },

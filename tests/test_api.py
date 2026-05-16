@@ -82,6 +82,74 @@ class TestIcsFeed:
         assert etag1 != etag2
 
 
+@pytest.mark.integration
+class TestIcsFeedTypeFilter:
+    _EVENTS = [
+        {"title": "Grande Brocante", "date_parsed": "2026-08-01", "location": "Lyon",
+         "uid": "u1", "source": "s", "ev_type": "brocante", "description": "", "url": ""},
+        {"title": "Vide-grenier Caluire", "date_parsed": "2026-08-02", "location": "Caluire",
+         "uid": "u2", "source": "s", "ev_type": "vide-grenier", "description": "", "url": ""},
+        {"title": "Braderie Villeurbanne", "date_parsed": "2026-08-03", "location": "Villeurbanne",
+         "uid": "u3", "source": "s", "ev_type": "braderie", "description": "", "url": ""},
+    ]
+
+    def _save(self, isolated_data):
+        save_events(self._EVENTS)
+
+    def test_no_filter_returns_all(self, client, isolated_data):
+        self._save(isolated_data)
+        resp = client.get("/feed.ics")
+        assert resp.status_code == 200
+        body = resp.content
+        assert b"Grande Brocante" in body
+        assert b"Vide-grenier Caluire" in body
+        assert b"Braderie Villeurbanne" in body
+
+    def test_single_type_filter(self, client, isolated_data):
+        self._save(isolated_data)
+        resp = client.get("/feed.ics?types=brocante")
+        assert b"Grande Brocante" in resp.content
+        assert b"Vide-grenier" not in resp.content
+        assert b"Braderie" not in resp.content
+
+    def test_multi_type_filter(self, client, isolated_data):
+        self._save(isolated_data)
+        resp = client.get("/feed.ics?types=brocante,vide-grenier")
+        assert b"Grande Brocante" in resp.content
+        assert b"Vide-grenier Caluire" in resp.content
+        assert b"Braderie" not in resp.content
+
+    def test_invalid_type_ignored(self, client, isolated_data):
+        self._save(isolated_data)
+        resp = client.get("/feed.ics?types=invalid_type")
+        assert resp.status_code == 200
+        # unknown type filtered → no events match (valid ICS but empty)
+        assert b"BEGIN:VCALENDAR" in resp.content
+
+    def test_empty_types_param_returns_all(self, client, isolated_data):
+        self._save(isolated_data)
+        resp = client.get("/feed.ics?types=")
+        assert b"Grande Brocante" in resp.content
+
+    def test_filter_changes_etag(self, client, isolated_data):
+        self._save(isolated_data)
+        etag_all = client.get("/feed.ics").headers["etag"]
+        etag_brocante = client.get("/feed.ics?types=brocante").headers["etag"]
+        assert etag_all != etag_brocante
+
+    def test_calname_includes_type_label_when_filtered(self, client, isolated_data):
+        self._save(isolated_data)
+        resp = client.get("/feed.ics?types=brocante")
+        assert b"Brocante" in resp.content
+
+    def test_304_still_works_with_type_filter(self, client, isolated_data):
+        self._save(isolated_data)
+        resp1 = client.get("/feed.ics?types=brocante")
+        etag = resp1.headers["etag"]
+        resp2 = client.get("/feed.ics?types=brocante", headers={"if-none-match": etag})
+        assert resp2.status_code == 304
+
+
 # ── GET /api/config ───────────────────────────────────────────────────────────
 
 @pytest.mark.integration
