@@ -809,9 +809,34 @@ async def test_distance_filter_drops_far_events(httpx_mock, monkeypatch, isolate
 
     # Search from Lyon (45.764, 4.836) with radius 30 km — Angers is ~370 km away
     events = await scrape_all(45.764, 4.836, 30)
-    # All events from BROCABRAC_JSONLD geocode to Angers → all should be dropped
+    # All events from BROCABRAC_JSONLD geocode to Angers → geocoded ones dropped
     geocoded = [e for e in events if e.get("geo")]
-    assert len(geocoded) == 0, "Events outside radius must be dropped after geocoding"
+    assert len(geocoded) == 0, "Events with geo outside radius must be dropped"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_un_geocoded_events_kept_despite_location(httpx_mock, monkeypatch, isolated_data):
+    """Events whose location Nominatim cannot resolve are kept, not silently dropped.
+
+    brocabrac.fr already filters results by distance server-side; dropping
+    un-geocoded events would silently hide valid events with uncommon venue names.
+    """
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock(lat=999, lng=999))
+
+    # Patch _assign_geo so no event gets a geo (simulates geocoding failure)
+    async def _fail_geocode(locations, cache):
+        pass  # nothing cached → no geo assigned
+
+    monkeypatch.setattr("app.scraper._geocode_batch", _fail_geocode)
+
+    httpx_mock.add_response(url=re.compile(r"https://brocabrac\.fr/.*"),      text=BROCABRAC_JSONLD,
+                            is_reusable=True)
+    httpx_mock.add_response(url=re.compile(r"https://vide-greniers\.org/.*"), text=EMPTY_HTML)
+
+    events = await scrape_all(45.764, 4.836, 30)
+    assert len(events) == 2, "Un-geocoded events must be kept, not dropped"
+    assert not any(e.get("geo") for e in events)
 
 
 @pytest.mark.integration

@@ -81,8 +81,7 @@ async def _geocode_batch(locations: list, cache: dict) -> None:
                         "postcode": postcode,
                     }
                     logger.debug("Geocoded '%s' → %s %s", loc, cache[key]["city"], postcode)
-                else:
-                    cache[key] = None  # cache miss so we don't retry every refresh
+                # don't cache misses — allow retry on next scrape
             except Exception as exc:
                 logger.debug("Geocode error '%s': %s", loc, exc)
                 cache[key] = None
@@ -604,25 +603,28 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
 
     _save_geocache(geocache)
 
-    # ── Distance filter (strict) ──────────────────────────────────────────────
-    # • geo present      → keep only if within radius × 1.15
-    # • address known but geocoding failed → DROP (can't verify, assume out of range)
-    # • no location at all → keep (can't filter, show anyway)
+    # ── Distance filter ───────────────────────────────────────────────────────
+    # Keep events geocoded within radius × 1.15. Events without geo coords
+    # are kept as-is — both sources already filter by distance server-side,
+    # so we trust their results rather than silently dropping events whose
+    # venue name Nominatim couldn't resolve.
     filtered = []
     for ev in unique_events:
-        if "geo" in ev:
-            if _haversine_km(lat, lng, ev["geo"]["lat"], ev["geo"]["lng"]) <= radius_km * 1.15:
+        geo = ev.get("geo")
+        if geo:
+            d = _haversine_km(lat, lng, geo["lat"], geo["lng"])
+            if d <= radius_km * 1.15:
                 filtered.append(ev)
-        elif ev.get("location") or ev.get("geo_query"):
-            logger.debug(
-                "Distance filter: dropped un-geocoded '%s' (%s)",
-                ev.get("title", "?"), ev.get("location", ""),
-            )
+            else:
+                logger.debug(
+                    "Distance filter: dropped '%s' geocoded %.0f km away",
+                    ev.get("title", "?"), d,
+                )
         else:
-            filtered.append(ev)  # no location info — can't filter
+            filtered.append(ev)  # no geo → trust source's own geo filter
 
     dropped = len(unique_events) - len(filtered)
     if dropped:
-        logger.info("Distance filter: dropped %d event(s) outside/un-geocoded", dropped)
+        logger.info("Distance filter: dropped %d event(s) confirmed outside radius", dropped)
 
     return filtered
