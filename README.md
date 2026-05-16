@@ -58,27 +58,52 @@ les événements survivent aux redémarrages et aux mises à jour du conteneur.
 
 ## Déploiement sur Unraid
 
-### Option 1 — Community Applications (custom repo)
-
-Dans l'interface Unraid :
-
-> **Apps → Settings → Extra Templates** → ajouter `Ba-pt0u/Brocante-calendar`
-
-CA découvre automatiquement `templates/brocantes-app.xml`. L'image est
-pullée depuis `ghcr.io` — aucun build local requis.
-
-### Option 2 — Script one-liner
+### Option 1 — Script one-liner (recommandé)
 
 ```bash
 # SSH dans Unraid, puis :
 bash <(curl -fsSL https://raw.githubusercontent.com/Ba-pt0u/Brocante-calendar/main/scripts/unraid-setup.sh)
 ```
 
-Le script **pull depuis ghcr.io** par défaut (build local en fallback si le pull échoue).
-Il est idempotent : le relancer suffit pour mettre à jour.
+Pull l'image depuis `ghcr.io` et démarre le conteneur. Idempotent : relancer suffit
+pour mettre à jour. Build local en fallback si le pull échoue.
+
+### Option 2 — Template dans l'UI Docker
+
+Copier le template via SSH, puis l'utiliser depuis l'interface :
 
 ```bash
-# Options disponibles
+# SSH dans Unraid :
+mkdir -p /boot/config/plugins/dockerMan/templates-user/
+curl -fsSL https://raw.githubusercontent.com/Ba-pt0u/Brocante-calendar/main/templates/brocantes-app.xml \
+  -o /boot/config/plugins/dockerMan/templates-user/brocantes-app.xml
+```
+
+Ensuite : **Docker → Add Container** → sélectionner **brocantes-app** dans la liste.
+L'image `ghcr.io/ba-pt0u/brocante-calendar:latest` est pré-remplie, Unraid la pull automatiquement.
+
+### Option 3 — Ajout manuel (sans template ni script)
+
+**Docker → Add Container**, remplir manuellement :
+
+| Champ | Valeur |
+|---|---|
+| Repository | `ghcr.io/ba-pt0u/brocante-calendar:latest` |
+| Port | `8642` → `8000` (TCP) |
+| Path | `/mnt/user/appdata/brocantes-app` → `/app/data` |
+| Variable | `DATA_DIR` = `/app/data` |
+
+### Option 4 — Docker Compose Manager (plugin)
+
+```bash
+# Sur Unraid, depuis le répertoire cloné :
+cp unraid/docker-compose.unraid.yml /mnt/user/appdata/brocantes-app/docker-compose.yml
+# Puis ajouter via le plugin Docker Compose Manager
+```
+
+### Variables du script d'installation
+
+```bash
 PORT=8123 bash scripts/unraid-setup.sh          # port personnalisé
 DATA_DIR=/mnt/cache/appdata/brocantes-app bash scripts/unraid-setup.sh
 bash scripts/unraid-setup.sh --build            # forcer le build local
@@ -90,14 +115,6 @@ bash scripts/unraid-setup.sh --build            # forcer le build local
 | `DATA_DIR` | `/mnt/user/appdata/brocantes-app` | Dossier appdata persistant |
 | `REMOTE_IMAGE` | `ghcr.io/ba-pt0u/brocante-calendar:latest` | Image distante |
 | `CONTAINER` | `brocantes-app` | Nom du conteneur |
-
-### Option 3 — Docker Compose Manager (plugin)
-
-```bash
-# Sur Unraid, depuis le répertoire cloné :
-cp unraid/docker-compose.unraid.yml /mnt/user/appdata/brocantes-app/docker-compose.yml
-# Puis ajouter via le plugin Docker Compose Manager
-```
 
 ### Option 4 — Template Docker manuel
 
