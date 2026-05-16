@@ -476,3 +476,108 @@ class TestGetStatus:
         data = client.get("/api/status").json()
         assert "sources" in data
         assert isinstance(data["sources"], dict)
+
+
+# ── Full pipeline : save → /feed.ics → parse → /api/events filters ───────────
+
+@pytest.mark.integration
+class TestFullPipeline:
+    """End-to-end: save events → GET /feed.ics → parse ICS → verify VEVENTs."""
+
+    _EVENTS = [
+        {
+            "title": "Grande Brocante de Lyon",
+            "date_parsed": "2026-07-15",
+            "location": "Place Bellecour, Lyon",
+            "description": "Brocante mensuelle",
+            "url": "https://brocabrac.fr/event/123",
+            "source": "brocabrac.fr",
+            "uid": "brocante-lyon-001",
+            "ev_type": "brocante",
+            "geo": {"lat": 45.764, "lng": 4.836, "city": "Lyon", "postcode": "69002"},
+        },
+        {
+            "title": "Vide-grenier Villeurbanne",
+            "date_parsed": "2026-07-22",
+            "location": "Place de la Mairie, Villeurbanne",
+            "description": "",
+            "url": "https://brocabrac.fr/event/456",
+            "source": "brocabrac.fr",
+            "uid": "vide-grenier-villeurb-002",
+            "ev_type": "vide-grenier",
+            "geo": {"lat": 45.772, "lng": 4.891, "city": "Villeurbanne", "postcode": "69100"},
+        },
+    ]
+
+    def _ics_vevents(self, raw: bytes) -> list[str]:
+        return [l.strip() for l in raw.decode("utf-8").splitlines() if l.strip() == "BEGIN:VEVENT"]
+
+    def test_ics_contains_all_saved_events(self, client, isolated_data):
+        save_events(self._EVENTS)
+        resp = client.get("/feed.ics")
+        assert resp.status_code == 200
+        assert resp.content.startswith(b"BEGIN:VCALENDAR")
+        assert len(self._ics_vevents(resp.content)) == 2
+
+    def test_ics_geo_present_for_geocoded_events(self, client, isolated_data):
+        save_events(self._EVENTS)
+        ics = client.get("/feed.ics").content.decode("utf-8")
+        assert "GEO:" in ics
+        assert "X-APPLE-STRUCTURED-LOCATION" in ics
+
+    def test_ics_valarm_present_for_dated_events(self, client, isolated_data):
+        save_events(self._EVENTS)
+        ics = client.get("/feed.ics").content.decode("utf-8")
+        assert "BEGIN:VALARM" in ics
+
+    def test_ics_type_filter_reduces_event_count(self, client, isolated_data):
+        save_events(self._EVENTS)
+        import app.main as m; m._state["ics_cache"] = {}
+        ics = client.get("/feed.ics?types=brocante").content.decode("utf-8")
+        assert len(self._ics_vevents(ics.encode())) == 1
+        assert "Grande Brocante de Lyon" in ics
+        assert "Vide-grenier Villeurbanne" not in ics
+
+    def test_api_events_type_filter(self, client, isolated_data):
+        save_events(self._EVENTS)
+        data = client.get("/api/events?types=vide-grenier").json()
+        assert data["count"] == 1
+        assert data["events"][0]["title"] == "Vide-grenier Villeurbanne"
+
+    def test_api_events_dept_filter(self, client, isolated_data):
+        save_events(self._EVENTS)
+        data = client.get("/api/events?dept=69").json()
+        assert data["count"] == 2  # both events are in dept 69
+
+    def test_api_events_within_days_filter(self, client, isolated_data):
+        from datetime import date, timedelta
+        today = date.today()
+        near = {**self._EVENTS[0], "uid": "near-01",
+                "date_parsed": (today + timedelta(days=3)).isoformat()}
+        far = {**self._EVENTS[1], "uid": "far-01",
+               "date_parsed": (today + timedelta(days=30)).isoformat()}
+        save_events([near, far])
+        data = client.get("/api/events?within_days=7").json()
+        assert data["count"] == 1
+        assert data["events"][0]["uid"] == "near-01"
+
+    def test_purge_then_ics_returns_empty_calendar(self, client, isolated_data):
+        save_events(self._EVENTS)
+        client.delete("/api/events")
+        resp = client.get("/feed.ics")
+        assert resp.content.startswith(b"BEGIN:VCALENDAR")
+        assert len(self._ics_vevents(resp.content)) == 0
+
+    def test_events_in_memory_cache_updated_after_purge(self, client, isolated_data):
+        import app.main as m
+        save_events(self._EVENTS)
+        m._state["events"] = self._EVENTS  # seed cache as if refresh ran
+        client.delete("/api/events")
+        assert m._state["events"] == []
+
+    def test_ics_utf8_event_titles_round_trip(self, client, isolated_data):
+        ev = {**self._EVENTS[0], "title": "Braderie à Strasbourg", "uid": "str-001"}
+        save_events([ev])
+        raw = client.get("/feed.ics").content
+        assert "Braderie" in raw.decode("utf-8")
+        assert raw.decode("utf-8")  # must not raise on decode

@@ -965,6 +965,144 @@ async def test_pagination_stops_on_page_error(httpx_mock, monkeypatch, isolated_
     assert "Grande Brocante de Lyon" in titles
 
 
+# ── T2 : JSON-LD edge cases ───────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestJsonldEdgeCases:
+    """_parse_jsonld must survive missing fields, bad JSON, unknown types."""
+
+    def _parse(self, html: str) -> list:
+        soup = BeautifulSoup(html, "lxml")
+        return _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")
+
+    def _wrap(self, obj) -> str:
+        import json as _json
+        return (
+            f'<!DOCTYPE html><html><head>'
+            f'<script type="application/ld+json">{_json.dumps(obj)}</script>'
+            f'</head><body></body></html>'
+        )
+
+    def test_event_without_start_date_is_dropped(self):
+        """Events without a parseable startDate are intentionally excluded."""
+        html = self._wrap([{"@context": "https://schema.org", "@type": "Event",
+                             "name": "Brocante sans date",
+                             "location": {"@type": "Place", "name": "Lyon"}}])
+        events = self._parse(html)
+        assert events == []  # date is required for inclusion
+
+    def test_event_without_location(self):
+        html = self._wrap([{"@context": "https://schema.org", "@type": "Event",
+                             "name": "Brocante sans lieu", "startDate": "2026-08-01"}])
+        events = self._parse(html)
+        assert len(events) == 1
+        assert events[0]["title"] == "Brocante sans lieu"
+
+    def test_empty_jsonld_array(self):
+        html = self._wrap([])
+        assert self._parse(html) == []
+
+    def test_non_event_type_ignored(self):
+        html = self._wrap([{"@context": "https://schema.org",
+                             "@type": "Organization", "name": "Pas un événement"}])
+        assert self._parse(html) == []
+
+    def test_malformed_json_does_not_raise(self):
+        html = (
+            '<html><head><script type="application/ld+json">'
+            '{this: is not valid JSON}'
+            '</script></head><body></body></html>'
+        )
+        events = self._parse(html)
+        assert events == []
+
+    def test_multiple_events_all_parsed(self):
+        html = self._wrap([
+            {"@context": "https://schema.org", "@type": "Event",
+             "name": f"Événement {i}", "startDate": f"2026-08-0{i}"}
+            for i in range(1, 4)
+        ])
+        assert len(self._parse(html)) == 3
+
+    def test_event_with_no_name_skipped(self):
+        html = self._wrap([{"@context": "https://schema.org", "@type": "Event",
+                             "startDate": "2026-08-01"}])
+        events = self._parse(html)
+        # Either skipped or given a fallback title — must not crash
+        for ev in events:
+            assert isinstance(ev.get("title", ""), str)
+
+    def test_location_string_instead_of_object(self):
+        html = self._wrap([{"@context": "https://schema.org", "@type": "Event",
+                             "name": "Brocante", "startDate": "2026-08-01",
+                             "location": "Place du Marché, Lyon"}])
+        events = self._parse(html)
+        assert len(events) == 1
+
+
+# ── T3 : network error scenarios ──────────────────────────────────────────────
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_connect_error_recorded_as_error(httpx_mock, monkeypatch, isolated_data):
+    """ConnectError (DNS/connection failure) is recorded in results, no crash."""
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
+    # Scraper retries 3 times — register exception for each attempt
+    for _ in range(3):
+        httpx_mock.add_exception(
+            httpx.ConnectError("Name or service not known"),
+            url=re.compile(r"https://brocabrac\.fr/.*"),
+        )
+    httpx_mock.add_response(
+        url=re.compile(r"https://vide-greniers\.org/.*"),
+        text=EMPTY_HTML,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+    events = await scrape_all(45.764, 4.836, 30)
+    assert isinstance(events, list)
+    assert "brocabrac.fr" in _last_scrape_results
+    assert _last_scrape_results["brocabrac.fr"].get("error") is not None
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_empty_200_response_returns_no_events(httpx_mock, monkeypatch, isolated_data):
+    """HTTP 200 with no parseable events → empty list, no crash."""
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
+    httpx_mock.add_response(
+        url=re.compile(r"https://brocabrac\.fr/.*"),
+        text=EMPTY_HTML,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+    httpx_mock.add_response(
+        url=re.compile(r"https://vide-greniers\.org/.*"),
+        text=EMPTY_HTML,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+    assert await scrape_all(45.764, 4.836, 30) == []
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_one_source_down_other_still_returns_events(httpx_mock, monkeypatch, isolated_data):
+    """If brocabrac.fr is unreachable, events from vide-greniers.org are still returned."""
+    monkeypatch.setattr("app.scraper._geocode_batch", _make_geocode_mock())
+    # Scraper retries 3 times — register exception for each attempt
+    for _ in range(3):
+        httpx_mock.add_exception(
+            httpx.ConnectError("connection refused"),
+            url=re.compile(r"https://brocabrac\.fr/.*"),
+        )
+    httpx_mock.add_response(
+        url=re.compile(r"https://vide-greniers\.org/.*"),
+        text=VIDEGRENIERS_JSONLD,
+        headers={"Content-Type": "text/html; charset=utf-8"},
+    )
+    events = await scrape_all(45.764, 4.836, 30)
+    assert len(events) >= 1
+    assert any(e["source"] == "vide-greniers.org" for e in events)
+
+
 @pytest.mark.live
 @pytest.mark.asyncio
 async def test_live_videgrenier_url_structure():
