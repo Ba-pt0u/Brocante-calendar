@@ -11,13 +11,13 @@ from datetime import date, timedelta
 from icalendar import Calendar
 
 from app.calendar_gen import (
-    _event_emoji,
+    _build_summary,
+    _context_emojis,
     _extract_city,
     _build_description,
     _add_alarm,
     generate_ics,
 )
-from app.calendar_gen import Event as ICalEvent  # icalendar.Event used internally
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -40,30 +40,106 @@ BASE_EVENT = {
     "url": "https://brocabrac.fr/event/123",
     "source": "brocabrac.fr",
     "uid": "abc123",
+    "ev_type": "brocante",
 }
 
 
-# ── _event_emoji ───────────────────────────────────────────────────────────────
+# ── _context_emojis ────────────────────────────────────────────────────────────
 
 @pytest.mark.unit
-class TestEventEmoji:
-    def test_brocante(self):
-        assert _event_emoji("Grande Brocante de Lyon") == "🛍️"
+class TestContextEmojis:
+    def test_food_keyword_buvette(self):
+        assert "🍕" in _context_emojis("buvette sur place")
 
-    def test_brocante_case_insensitive(self):
-        assert _event_emoji("BROCANTE ANNUELLE") == "🛍️"
+    def test_food_keyword_restaur(self):
+        assert "🍕" in _context_emojis("restauration possible")
 
-    def test_vide_grenier_hyphen(self):
-        assert _event_emoji("Vide-grenier du quartier") == "🏷️"
+    def test_food_keyword_frites(self):
+        assert "🍕" in _context_emojis("frites et merguez")
 
-    def test_vide_grenier_space(self):
-        assert _event_emoji("vide grenier de printemps") == "🏷️"
+    def test_anim_keyword_animation(self):
+        assert "🎪" in _context_emojis("animations pour les enfants")
 
-    def test_unknown_falls_back_to_box(self):
-        assert _event_emoji("Fête de village") == "📦"
+    def test_anim_keyword_spectacle(self):
+        assert "🎪" in _context_emojis("spectacle gratuit")
 
-    def test_empty_falls_back_to_box(self):
-        assert _event_emoji("") == "📦"
+    def test_anim_keyword_in_title(self):
+        assert "🎪" in _context_emojis("", "Concert et brocante")
+
+    def test_both_emojis_when_both_keywords(self):
+        result = _context_emojis("buvette et animation")
+        assert "🍕" in result
+        assert "🎪" in result
+
+    def test_no_keywords_returns_empty(self):
+        assert _context_emojis("Vente de meubles anciens") == ""
+
+    def test_empty_inputs_return_empty(self):
+        assert _context_emojis("", "") == ""
+
+
+# ── _build_summary ─────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestBuildSummary:
+    def test_brocante_type_emoji(self):
+        ev = {**BASE_EVENT, "ev_type": "brocante"}
+        assert "🛍️" in _build_summary(ev)
+
+    def test_vide_grenier_type_emoji(self):
+        ev = {**BASE_EVENT, "ev_type": "vide-grenier"}
+        assert "📦" in _build_summary(ev)
+
+    def test_braderie_type_emoji(self):
+        ev = {**BASE_EVENT, "ev_type": "braderie"}
+        assert "🏷️" in _build_summary(ev)
+
+    def test_unknown_type_falls_back_to_agenda_emoji(self):
+        ev = {**BASE_EVENT, "ev_type": "autre"}
+        assert "📅" in _build_summary(ev)
+
+    def test_type_label_present_for_brocante(self):
+        ev = {**BASE_EVENT, "ev_type": "brocante"}
+        assert "Brocante" in _build_summary(ev)
+
+    def test_type_label_absent_for_autre(self):
+        ev = {**BASE_EVENT, "ev_type": "autre"}
+        summary = _build_summary(ev)
+        assert "Autre" not in summary
+
+    def test_city_from_geo(self):
+        ev = {**BASE_EVENT, "geo": {"lat": 45.76, "lng": 4.83, "city": "Lyon"}}
+        assert "Lyon" in _build_summary(ev)
+
+    def test_city_from_location_fallback(self):
+        ev = {**BASE_EVENT, "location": "Place du Marché, Villeurbanne"}
+        assert "Villeurbanne" in _build_summary(ev)
+
+    def test_title_present_in_summary(self):
+        assert "Grande Brocante de Lyon" in _build_summary(BASE_EVENT)
+
+    def test_full_format_with_label_and_city(self):
+        ev = {**BASE_EVENT, "ev_type": "brocante", "geo": {"lat": 45.76, "lng": 4.83, "city": "Lyon"}}
+        summary = _build_summary(ev)
+        assert "🛍️" in summary
+        assert "Brocante" in summary
+        assert "Lyon" in summary
+        assert "Grande Brocante de Lyon" in summary
+
+    def test_context_emoji_appended_when_food(self):
+        ev = {**BASE_EVENT, "description": "buvette sur place"}
+        assert "🍕" in _build_summary(ev)
+
+    def test_context_emoji_not_present_when_no_match(self):
+        ev = {**BASE_EVENT, "description": "Vente de livres anciens"}
+        summary = _build_summary(ev)
+        assert "🍕" not in summary
+        assert "🎪" not in summary
+
+    def test_missing_title_falls_back_to_default(self):
+        ev = {k: v for k, v in BASE_EVENT.items() if k != "title"}
+        summary = _build_summary(ev)
+        assert "Événement" in summary
 
 
 # ── _extract_city ──────────────────────────────────────────────────────────────

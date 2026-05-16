@@ -176,6 +176,30 @@ Chaque événement dans le calendrier iOS bénéficie de :
 - 🔔 Rappel automatique (18h la veille pour les week-ends, midi pour les jours de semaine)
 - 🔗 Lien direct vers la page de l'événement
 
+### Format du titre iCal
+
+```
+{emoji} {Type} — {Ville} — {Titre original} {emojis contextuels}
+```
+
+Exemple : `🛍️ Brocante — Saint-Arnoult — Grande Brocante annuelle 🍕🎪`
+
+| Emoji type | Type d'événement |
+|---|---|
+| 🛍️ | Brocante |
+| 📦 | Vide-grenier |
+| 🏷️ | Braderie |
+| 👗 | Bourse (vêtements, jouets…) |
+| 🐾 | Marché aux puces |
+| 📅 | Autre |
+
+**Emojis contextuels** (ajoutés automatiquement si détectés dans le titre ou la description) :
+
+| Emoji | Critère |
+|---|---|
+| 🍕 | Présence d'une restauration / buvette (buvette, restaur, frites, crêpes…) |
+| 🎪 | Animations / spectacles (animation, musique, concert, cirque…) |
+
 ---
 
 ## API

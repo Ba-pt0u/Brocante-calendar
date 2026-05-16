@@ -4,14 +4,80 @@ from datetime import date, timedelta
 
 from icalendar import Alarm, Calendar, Event, vText
 
+# ── Type → emoji + label ─────────────────────────────────────────────────────
+# Set A chosen by user:  🛍️ brocante · 📦 vide-grenier · 🏷️ braderie
+#                        👗 bourse · 🐾 marché-puces · 📅 autre
+_TYPE_EMOJIS = {
+    "brocante":    "🛍️",
+    "vide-grenier": "📦",
+    "braderie":    "🏷️",
+    "bourse":      "👗",
+    "marche-puces": "🐾",
+    "autre":       "📅",
+}
 
-def _event_emoji(title: str) -> str:
-    t = title.lower()
-    if "vide-grenier" in t or "vide grenier" in t:
-        return "🏷️"
-    if "brocante" in t:
-        return "🛍️"
-    return "📦"
+_TYPE_LABELS = {
+    "brocante":    "Brocante",
+    "vide-grenier": "Vide-grenier",
+    "braderie":    "Braderie",
+    "bourse":      "Bourse",
+    "marche-puces": "Marché aux puces",
+    # "autre" intentionally omitted → no label printed
+}
+
+# ── Contextual emoji detection (from description / title) ────────────────────
+# 🍕 food/refreshments  🎪 animations/entertainment
+_FOOD_RE  = re.compile(
+    r"buvette|restaur|snack|repas|frites|crêpes?|crepes?|nourriture|manger|café|guinguette",
+    re.IGNORECASE,
+)
+_ANIM_RE  = re.compile(
+    r"animation|spectacle|musique|manège|manege|concert|artiste|cirque|jeux",
+    re.IGNORECASE,
+)
+
+
+def _context_emojis(description: str, title: str = "") -> str:
+    """Return trailing emoji string based on keywords in description + title."""
+    text = f"{description} {title}"
+    result = ""
+    if _FOOD_RE.search(text):
+        result += "🍕"
+    if _ANIM_RE.search(text):
+        result += "🎪"
+    return result
+
+
+def _build_summary(ev: dict) -> str:
+    """
+    Build the iCal SUMMARY field.
+
+    Format:  {emoji} {Type label} — {Ville} — {Titre original} {ctx_emojis}
+    Example: 🛍️ Brocante — Saint-Arnoult — Grande Brocante annuelle 🍕
+
+    Falls back gracefully when city or type label are missing.
+    """
+    title = (ev.get("title") or "Événement").strip()
+
+    ev_type  = ev.get("ev_type") or "autre"
+    emoji    = _TYPE_EMOJIS.get(ev_type, "📅")
+    label    = _TYPE_LABELS.get(ev_type, "")
+
+    geo  = ev.get("geo") or {}
+    city = (geo.get("city") or _extract_city(ev.get("location", ""))).strip()
+
+    ctx = _context_emojis(ev.get("description", ""), title)
+
+    if label and city:
+        core = f"{emoji} {label} — {city} — {title}"
+    elif label:
+        core = f"{emoji} {label} — {title}"
+    elif city:
+        core = f"{emoji} {city} — {title}"
+    else:
+        core = f"{emoji} {title}"
+
+    return f"{core} {ctx}".rstrip() if ctx else core
 
 
 def _extract_city(location: str) -> str:
@@ -40,21 +106,17 @@ def _build_description(ev: dict) -> str:
     return "\n\n".join(filter(None, parts))
 
 
-def _add_alarm(vevent: Event, title: str, event_date: date) -> None:
+def _add_alarm(vevent: Event, summary: str, event_date: date) -> None:
     """Smart reminder: Friday 18 h for weekend events, noon the day before otherwise."""
-    # weekday(): Monday=0 … Saturday=5, Sunday=6
     weekday = event_date.weekday()
     if weekday in (5, 6):
-        # All-day DTSTART is midnight → -6 h = 18:00 the evening before
         trigger = timedelta(hours=-6)
-        msg = f"Brocante demain 🛍️ {title}"
     else:
         trigger = timedelta(hours=-12)
-        msg = f"Brocante demain 🛍️ {title}"
 
     alarm = Alarm()
     alarm.add("action", "DISPLAY")
-    alarm.add("description", msg)
+    alarm.add("description", f"Demain → {summary}")
     alarm.add("trigger", trigger)
     vevent.add_component(alarm)
 
@@ -68,24 +130,18 @@ def generate_ics(events: list, config: dict) -> bytes:
     cal.add("x-wr-calname", f"🛍️ Brocantes – {config.get('city', 'Ma ville')}")
     cal.add("x-wr-timezone", "Europe/Paris")
     cal.add("x-published-ttl", "PT12H")
-    # RFC 7986: hint to clients how often to re-fetch the feed
     cal.add("refresh-interval", timedelta(hours=1))
-    # Brand the subscribed calendar in iOS with a warm rust colour
     cal.add("x-apple-calendar-color", "#B8481C")
 
     for ev in events:
         vevent = Event()
         vevent.add("status", "CONFIRMED")
 
-        # ── SUMMARY: emoji + title + short city ──────────────────────────
-        title = ev.get("title", "Événement")
-        emoji = _event_emoji(title)
-        geo   = ev.get("geo") or {}
-        city  = geo.get("city") or _extract_city(ev.get("location", ""))
-        summary = f"{emoji} {title} • {city}" if city else f"{emoji} {title}"
+        # ── SUMMARY ─────────────────────────────────────────────────────────
+        summary = _build_summary(ev)
         vevent.add("summary", summary)
 
-        # ── Dates (all-day) ──────────────────────────────────────────────
+        # ── Dates (all-day) ─────────────────────────────────────────────────
         raw_date = ev.get("date_parsed")
         event_date = None
         if raw_date:
@@ -96,19 +152,17 @@ def generate_ics(events: list, config: dict) -> bytes:
             except ValueError:
                 pass
 
-        # ── Location ─────────────────────────────────────────────────────
+        # ── Location ────────────────────────────────────────────────────────
         location = ev.get("location", "")
         if location:
             vevent.add("location", vText(location))
 
-        # ── GEO + X-APPLE-STRUCTURED-LOCATION → map card in iOS ─────────
+        # ── GEO + X-APPLE-STRUCTURED-LOCATION → map card in iOS ────────────
+        geo = ev.get("geo") or {}
         if geo.get("lat") and geo.get("lng"):
             lat, lng = geo["lat"], geo["lng"]
-
-            # Standard GEO property (lat;lng)
             vevent.add("geo", (lat, lng))
 
-            # Apple-specific rich location (shows inline map + Directions button)
             geo_uri = vText(f"geo:{lat},{lng}")
             geo_uri.params["VALUE"]          = "URI"
             geo_uri.params["X-ADDRESS"]      = location
@@ -116,20 +170,20 @@ def generate_ics(events: list, config: dict) -> bytes:
             geo_uri.params["X-TITLE"]        = location
             vevent["x-apple-structured-location"] = geo_uri
 
-        # ── URL (shown as tappable "Page web" link in iOS) ───────────────
+        # ── URL ─────────────────────────────────────────────────────────────
         source_url = ev.get("url", "")
         if source_url:
             vevent.add("url", source_url)
 
-        # ── Description ──────────────────────────────────────────────────
+        # ── Description ─────────────────────────────────────────────────────
         vevent.add("description", _build_description(ev))
 
-        # ── Smart VALARM ─────────────────────────────────────────────────
+        # ── Smart VALARM ────────────────────────────────────────────────────
         if event_date:
-            _add_alarm(vevent, title, event_date)
+            _add_alarm(vevent, summary, event_date)
 
-        # ── UID ──────────────────────────────────────────────────────────
-        uid_base = ev.get("uid") or hashlib.md5(title.encode()).hexdigest()
+        # ── UID ─────────────────────────────────────────────────────────────
+        uid_base = ev.get("uid") or hashlib.md5((ev.get("title", "")).encode()).hexdigest()
         vevent.add("uid", f"{uid_base}@brocantes-app.local")
 
         cal.add_component(vevent)
