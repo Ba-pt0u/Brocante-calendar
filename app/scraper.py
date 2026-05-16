@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 import time
 from datetime import date, datetime
@@ -85,6 +86,14 @@ async def _geocode_batch(locations: list, cache: dict) -> None:
                 logger.debug("Geocode error '%s': %s", loc, exc)
                 cache[key] = None
             await asyncio.sleep(1.1)  # Nominatim: max 1 req/sec
+
+
+def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return R * 2 * math.asin(math.sqrt(a))
 
 
 # ──────────────────────────────────────────────
@@ -369,4 +378,15 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
         if key and geocache.get(key):
             ev["geo"] = geocache[key]
 
-    return unique_events
+    # Drop events whose geocoded location is clearly outside the requested radius.
+    # Events without geocoded coords pass through (we cannot verify their distance).
+    filtered = [
+        ev for ev in unique_events
+        if "geo" not in ev
+        or _haversine_km(lat, lng, ev["geo"]["lat"], ev["geo"]["lng"]) <= radius_km * 1.15
+    ]
+    dropped = len(unique_events) - len(filtered)
+    if dropped:
+        logger.info("Distance filter: dropped %d event(s) outside %d km radius", dropped, radius_km)
+
+    return filtered

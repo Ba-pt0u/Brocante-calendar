@@ -41,13 +41,13 @@ def reset_app_state():
 @pytest.fixture
 def client(monkeypatch):
     """
-    TestClient with scrape_all stubbed out so no real HTTP requests are made
-    and the background refresh task completes instantly.
+    TestClient with _do_refresh stubbed out so background refreshes never
+    touch the events file and no real HTTP requests are made.
     """
-    async def _noop_scrape(*args, **kwargs):
-        return []
+    async def _noop_refresh():
+        pass
 
-    monkeypatch.setattr("app.main.scrape_all", _noop_scrape)
+    monkeypatch.setattr("app.main._do_refresh", _noop_refresh)
 
     from app.main import app
     with TestClient(app, raise_server_exceptions=True) as c:
