@@ -75,7 +75,15 @@ def _build_summary(ev: dict) -> str:
             label = ""
 
     geo  = ev.get("geo") or {}
-    city = (geo.get("city") or _extract_city(ev.get("location", ""))).strip()
+    # Priority: JSON-LD addressLocality (ev["city"]) > Nominatim result (geo["city"])
+    # > best-effort extraction from the location string.
+    # Nominatim can return an administrative center (e.g. "Rambouillet") instead of
+    # the actual commune ("Breuillet"), so structured JSON-LD data is preferred.
+    city = (
+        ev.get("city")
+        or geo.get("city")
+        or _extract_city(ev.get("location", ""))
+    ).strip()
 
     ctx = _context_emojis(ev.get("description", ""), title)
 
@@ -91,14 +99,30 @@ def _build_summary(ev: dict) -> str:
     return f"{core} {ctx}".rstrip() if ctx else core
 
 
+# Words that indicate a venue/address rather than a city name.
+# Used to avoid displaying "Salle des fêtes" or "Stade municipal" as a city.
+_VENUE_PREFIX = re.compile(
+    r"^(salle|stade|terrain|gymnase|espace|école|ecole|eglise|église|mairie|"
+    r"boulodrome|complexe|centre|foyer|bois|parc|manège|manege|domaine|"
+    r"ferme|château|chateau|champ|propriété|propriete|parking|"
+    r"rue\b|avenue|boulevard|allée|allee|chemin|route\b|place\b|impasse|"
+    r"esplanade|parvis|promenade|quai|cours\b|lieu.dit|lieudit)",
+    re.IGNORECASE,
+)
+
+
 def _extract_city(location: str) -> str:
-    """Best-effort city extraction from a raw location string."""
+    """Best-effort city extraction from a raw location string.
+
+    Iterates comma-separated parts in reverse (last part is usually the city).
+    Parts that match venue/address keywords are skipped.
+    """
     if not location:
         return ""
     parts = [p.strip() for p in location.split(",")]
     for part in reversed(parts):
         city = re.sub(r"^\d{4,5}\s*", "", part).strip()
-        if 2 <= len(city) < 50:
+        if 2 <= len(city) < 50 and not _VENUE_PREFIX.match(city):
             return city
     return ""
 

@@ -245,6 +245,8 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
             loc_obj = item.get("location", {})
             location = ""
             geo_query = ""
+            locality = ""
+            addr_part = ""
             if isinstance(loc_obj, dict):
                 addr = loc_obj.get("address", {})
                 venue = loc_obj.get("name", "").strip()
@@ -289,6 +291,12 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
                 # can mislead Nominatim). Only stored when different from geo_query.
                 if addr_part and addr_part != geo_query and addr_part != location:
                     ev["geo_query_fallback"] = addr_part
+                # Store the canonical commune name for the ICS title.
+                # Nominatim can return an administrative center instead of the
+                # actual commune; addressLocality from the structured JSON-LD is
+                # the authoritative name and is preferred in _build_summary.
+                if locality:
+                    ev["city"] = locality
                 events.append(ev)
     return events
 

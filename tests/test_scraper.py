@@ -199,6 +199,20 @@ class TestParseJsonld:
         assert "Bullion" in geo_query                     # geocoding: includes city
         assert "78720" in geo_query                       # geocoding: includes postcode
 
+    def test_address_locality_stored_as_city(self):
+        """addressLocality from JSON-LD must be stored as ev['city'] for ICS titles."""
+        soup = self._soup(BROCABRAC_JSONLD)
+        ev = _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")[0]
+        # BROCABRAC_JSONLD first event has addressLocality "Lyon"
+        assert ev.get("city") == "Lyon"
+
+    def test_city_stored_for_venue_only_location(self):
+        """When location is a venue name, city must still be stored from addressLocality."""
+        soup = self._soup(BROCABRAC_VENUE_ONLY)
+        ev = _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")[0]
+        assert ev["location"] == "Les Framboisines"  # venue name kept for display
+        assert ev.get("city") == "Bullion"            # commune from addressLocality
+
     def test_no_geo_query_when_location_equals_query(self):
         # If the geo_query would be the same as location, no extra field is stored
         soup = self._soup(VIDEGRENIERS_JSONLD)

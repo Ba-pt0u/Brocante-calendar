@@ -193,8 +193,50 @@ class TestExtractCity:
         assert city == "Caluire-et-Cuire"
 
     def test_single_word_location(self):
-        # No comma → return the location itself (≤ 40 chars)
+        # Single city name without comma → returned as-is (not a venue keyword)
         assert _extract_city("Lyon") == "Lyon"
+
+    def test_venue_name_without_comma_returns_empty(self):
+        """A bare venue name must not be used as a city."""
+        assert _extract_city("Salle des fêtes") == ""
+        assert _extract_city("Stade municipal") == ""
+        assert _extract_city("Terrain de sports") == ""
+
+    def test_venue_before_city_with_comma_returns_city(self):
+        """Venue, City → city extracted despite leading venue."""
+        assert _extract_city("Salle des fêtes, Breuillet") == "Breuillet"
+        assert _extract_city("Stade de foot, 78730 Bullion") == "Bullion"
+
+
+@pytest.mark.unit
+class TestBuildSummaryCity:
+    """City priority: ev['city'] > geo['city'] > _extract_city(location)."""
+
+    def test_ev_city_overrides_geo_city(self):
+        """addressLocality from JSON-LD (ev['city']) wins over Nominatim result."""
+        ev = {
+            **BASE_EVENT,
+            "city": "Breuillet",
+            "geo": {"lat": 48.5, "lng": 2.0, "city": "Rambouillet"},
+            "location": "Salle des fêtes",
+        }
+        summary = _build_summary(ev)
+        assert "Breuillet" in summary
+        assert "Rambouillet" not in summary
+
+    def test_geo_city_used_when_no_ev_city(self):
+        ev = {**BASE_EVENT, "geo": {"lat": 45.76, "lng": 4.83, "city": "Lyon"}}
+        assert "Lyon" in _build_summary(ev)
+
+    def test_venue_name_not_shown_as_city(self):
+        """A bare venue name must not appear as the city prefix in the title."""
+        ev = {**BASE_EVENT, "location": "Salle des fêtes"}  # no ev.city, no geo
+        summary = _build_summary(ev)
+        assert not summary.startswith("Salle")
+
+    def test_city_extracted_from_location_when_no_geo(self):
+        ev = {**BASE_EVENT, "location": "Place de la Mairie, Orcemont"}
+        assert "Orcemont" in _build_summary(ev)
 
     def test_empty_string(self):
         assert _extract_city("") == ""
