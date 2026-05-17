@@ -213,16 +213,46 @@ class TestBuildSummaryCity:
     """City priority: ev['city'] > geo['city'] > _extract_city(location)."""
 
     def test_ev_city_overrides_geo_city(self):
-        """addressLocality from JSON-LD (ev['city']) wins over Nominatim result."""
+        """validated addressLocality (ev['city']) wins over Nominatim result."""
         ev = {
             **BASE_EVENT,
             "city": "Breuillet",
             "geo": {"lat": 48.5, "lng": 2.0, "city": "Rambouillet"},
-            "location": "Salle des fêtes",
+            "location": "Salle des fêtes",  # venue prefix → single_word_city=""
         }
         summary = _build_summary(ev)
         assert "Breuillet" in summary
         assert "Rambouillet" not in summary
+
+    def test_single_word_venue_beats_wrong_locality(self):
+        """When brocabrac.fr puts the commune as the venue, prefer it over addressLocality.
+
+        Typical case: venue='Orcemont', addressLocality='Rambouillet' (canton centre).
+        The single-word venue is the actual commune → should appear in the title.
+        """
+        ev = {
+            **BASE_EVENT,
+            "city": "Rambouillet",   # addressLocality = canton centre (wrong)
+            "location": "Orcemont",  # venue = actual commune (correct)
+        }
+        summary = _build_summary(ev)
+        assert "Orcemont" in summary
+        assert "Rambouillet" not in summary
+
+    def test_street_in_locality_is_discarded(self):
+        """addressLocality that looks like a street (Rue d'Arras) must not appear as city.
+
+        brocabrac.fr occasionally puts street names in addressLocality.  The venue
+        ('Ablis') should be used instead.
+        """
+        ev = {
+            **BASE_EVENT,
+            "city": "Rue d'Arras",  # bad data from brocabrac.fr
+            "location": "Ablis",    # venue = commune name → single_word_city
+        }
+        summary = _build_summary(ev)
+        assert "Ablis" in summary
+        assert "Rue d'Arras" not in summary
 
     def test_geo_city_used_when_no_ev_city(self):
         ev = {**BASE_EVENT, "geo": {"lat": 45.76, "lng": 4.83, "city": "Lyon"}}

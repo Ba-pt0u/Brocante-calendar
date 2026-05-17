@@ -74,15 +74,27 @@ def _build_summary(ev: dict) -> str:
         if norm(title).startswith(norm(label)):
             label = ""
 
-    geo  = ev.get("geo") or {}
-    # Priority: JSON-LD addressLocality (ev["city"]) > Nominatim result (geo["city"])
-    # > best-effort extraction from the location string.
-    # Nominatim can return an administrative center (e.g. "Rambouillet") instead of
-    # the actual commune ("Breuillet"), so structured JSON-LD data is preferred.
+    geo = ev.get("geo") or {}
+    raw_location = ev.get("location", "")
+    extracted = _extract_city(raw_location)
+
+    # A single-word extracted city (no spaces) means brocabrac.fr used the commune
+    # name itself as the venue (e.g. "Orcemont").  This is more reliable than
+    # addressLocality, which brocabrac.fr sometimes sets to the canton centre
+    # ("Rambouillet") or even a street name ("Rue d'Arras").
+    single_word_city = extracted if (extracted and " " not in extracted) else ""
+
+    # Validate ev["city"] from JSON-LD addressLocality: discard if it looks like a
+    # street or venue (e.g. "Rue d'Arras", "Avenue de la Gare").
+    ev_city = ev.get("city") or ""
+    if ev_city and _VENUE_PREFIX.match(ev_city):
+        ev_city = ""
+
     city = (
-        ev.get("city")
-        or geo.get("city")
-        or _extract_city(ev.get("location", ""))
+        single_word_city    # commune name used as venue ("Orcemont") — most reliable
+        or ev_city          # validated addressLocality ("Lyon", "Breuillet"…)
+        or geo.get("city")  # Nominatim geocoding result
+        or extracted        # multi-word fallback ("Caluire-et-Cuire, …")
     ).strip()
 
     ctx = _context_emojis(ev.get("description", ""), title)
