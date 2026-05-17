@@ -212,32 +212,6 @@ def make_uid(title: str, event_date: str, location: str) -> str:
     return hashlib.md5(key.encode("utf-8")).hexdigest()
 
 
-CARD_SELECTORS = [
-    "article.card", ".event-card", "[data-event]", ".event-item",
-    ".brocante-item", ".vide-grenier-item", "article.event",
-    ".listing-item", ".search-result", ".result-item",
-    "li.event", ".annonce", ".card", "article",
-]
-TITLE_SELECTORS    = [".title", ".card-title", ".event-title", ".name", "h2", "h3", "h4", "h5"]
-DATE_SELECTORS     = [".date", ".event-date", ".date-str", ".datetime", "time", "[datetime]"]
-LOCATION_SELECTORS = [".location", ".lieu", ".city", ".address", ".place", ".localisation", ".ville", ".commune"]
-DESC_SELECTORS     = [".description", ".excerpt", ".summary", ".intro", "p"]
-
-
-def _strip(el) -> str:
-    return el.get_text(" ", strip=True) if el else ""
-
-
-def _extract(container, selectors: list) -> str:
-    for sel in selectors:
-        found = container.select_one(sel)
-        if found:
-            text = _strip(found)
-            if text:
-                return text
-    return ""
-
-
 def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
     events = []
     for script in soup.find_all("script", type="application/ld+json"):
@@ -310,49 +284,7 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
     return events
 
 
-def _parse_cards(soup: BeautifulSoup, base_url: str, source_name: str, base_domain: str) -> list:
-    events = []
-    for selector in CARD_SELECTORS:
-        cards = soup.select(selector)
-        if not cards:
-            continue
-        for card in cards:
-            title = _extract(card, TITLE_SELECTORS)
-            if not title:
-                continue
-            date_text = ""
-            for sel in DATE_SELECTORS:
-                el = card.select_one(sel)
-                if el:
-                    date_text = el.get("datetime", "") or _strip(el)
-                    if date_text:
-                        break
-            location = _extract(card, LOCATION_SELECTORS)
-            description = _extract(card, DESC_SELECTORS)
-            link_el = card.find("a", href=True)
-            url = base_url
-            if link_el:
-                href = link_el["href"]
-                url = href if href.startswith("http") else base_domain + href
-            parsed = parse_french_date(date_text)
-            if parsed and parsed >= date.today():
-                uid = make_uid(title, str(parsed), location)
-                events.append({
-                    "title": title,
-                    "date_parsed": str(parsed),
-                    "location": location,
-                    "description": description,
-                    "url": url,
-                    "uid": uid,
-                    "source": source_name,
-                    "ev_type": _classify_event(title),
-                })
-        if events:
-            break
-    return events
-
-
-MAX_PAGES = 8  # safety cap per source
+MAX_PAGES = 8  # safety cap
 
 
 def _find_next_page(soup: BeautifulSoup, current_url: str, base_domain: str) -> str | None:
@@ -455,20 +387,9 @@ async def _scrape_source(
             break
 
         soup = BeautifulSoup(resp.text, "lxml")
-
-        # Choose strategy: JSON-LD preferred, CSS cards as fallback (locked after page 1)
+        events = _parse_jsonld(soup, current_url, source_name)
         if page_num == 0:
-            events = _parse_jsonld(soup, current_url, source_name)
-            if events:
-                result["strategy"] = "json-ld"
-            else:
-                events = _parse_cards(soup, current_url, source_name, base_domain)
-                if events:
-                    result["strategy"] = "css"
-        elif result["strategy"] == "json-ld":
-            events = _parse_jsonld(soup, current_url, source_name)
-        else:
-            events = _parse_cards(soup, current_url, source_name, base_domain)
+            result["strategy"] = "json-ld" if events else None
 
         # Only keep events not already collected (loop-back detection)
         new_events = [ev for ev in events if ev.get("uid") not in seen_event_uids]
@@ -528,7 +449,6 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
     # ── brocabrac.fr URL ──────────────────────────────────────────────────────
     # The reliable URL format is /{dept}/{commune-slug}/ (e.g. /78/saint-arnoult-en-yvelines/).
     # To get the dept code we need the postal code, which comes from geocoding the city.
-    # vide-greniers.org uses explicit lat=/lng= → coordinates are fine there.
     brocabrac_city_raw = city.split(",")[0].strip() if city else ""
     city_key = brocabrac_city_raw.strip().lower()
 
@@ -556,43 +476,21 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
 
     logger.info("brocabrac.fr URL: %s", brocabrac_url)
 
-    sources = [
-        (brocabrac_url, "brocabrac.fr", "https://brocabrac.fr"),
-        (
-            f"https://vide-greniers.org/recherche?lat={lat}&lng={lng}&distance={radius_km}",
-            "vide-greniers.org",
-            "https://vide-greniers.org",
-        ),
-    ]
-
-    # ── Scrape (parallel) ────────────────────────────────────────────────────
-    all_events: list = []
-
-    async def _do_scrape(url: str, name: str, domain: str):
-        src_events, src_result = await _scrape_source(client, url, name, domain)
-        src_result["last_run"] = datetime.now().isoformat()
-        return name, src_events, src_result
-
+    # ── Scrape ───────────────────────────────────────────────────────────────
     # brocabrac.fr reads the search radius from the BROCA_DISTANCE cookie.
-    # Use domain-restricted cookies so the cookie is only sent to brocabrac.fr.
     jar = httpx.Cookies()
     jar.set("BROCA_DISTANCE", str(radius_km), domain="brocabrac.fr")
 
     async with httpx.AsyncClient(headers=headers, follow_redirects=True, cookies=jar) as client:
-        gathered = await asyncio.gather(*[
-            _do_scrape(url, name, domain) for url, name, domain in sources
-        ])
-        for name, src_events, src_result in gathered:
-            _last_scrape_results[name] = src_result
-            all_events.extend(src_events)
+        events, src_result = await _scrape_source(
+            client, brocabrac_url, "brocabrac.fr", "https://brocabrac.fr"
+        )
+        src_result["last_run"] = datetime.now().isoformat()
+        _last_scrape_results["brocabrac.fr"] = src_result
 
-    # ── Deduplicate + sort ────────────────────────────────────────────────────
-    seen: dict = {}
-    for ev in all_events:
-        uid = ev.get("uid", "")
-        if uid and uid not in seen:
-            seen[uid] = ev
-    unique_events = sorted(seen.values(), key=lambda e: e.get("date_parsed", "9999-12-31"))
+    # ── Sort ─────────────────────────────────────────────────────────────────
+    # _scrape_source already deduplicates within a single source.
+    unique_events = sorted(events, key=lambda e: e.get("date_parsed", "9999-12-31"))
 
     # ── Geocode event locations — pass 1 : full address (venue + postcode + city) ──
     unique_queries = list({
@@ -628,7 +526,7 @@ async def scrape_all(lat: float, lng: float, radius_km: int, city: str = "") -> 
 
     # ── Distance filter ───────────────────────────────────────────────────────
     # Keep events geocoded within radius × 1.15. Events without geo coords
-    # are kept as-is — both sources already filter by distance server-side,
+    # are kept as-is — brocabrac.fr already filters by distance server-side,
     # so we trust their results rather than silently dropping events whose
     # venue name Nominatim couldn't resolve.
     filtered = []

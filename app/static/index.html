@@ -342,7 +342,6 @@
       padding: .1rem .5rem; border-radius: 20px;
     }
     .sb-bb { background: #FFF0E8; color: var(--rust);     border: 1px solid #F0C0A0; }
-    .sb-vg { background: #EEF5EB; color: var(--sage-dk);  border: 1px solid #B0D0A0; }
     .sb-xx { background: var(--cream-mid); color: var(--ink-lt); border: 1px solid var(--cream-dark); }
     /* Event type badges */
     .sb-type-brocante        { background: #FFF0E8; color: var(--rust-dk);  border: 1px solid #F0C0A0; }
@@ -1073,7 +1072,7 @@ function evHtml(ev, sat, sun, today, idx) {
   else if (diff>1&&diff<=6)      tb = `<span class="tb tb-week">Dans ${diff}j</span>`;
 
   const src    = ev.source || '';
-  const srcCls = src.includes('brocabrac') ? 'sb-bb' : src.includes('vide-grenier') ? 'sb-vg' : 'sb-xx';
+  const srcCls = src.includes('brocabrac') ? 'sb-bb' : 'sb-xx';
 
   const t      = evType(ev);
   const emoji  = TYPE_EMOJIS[t] || '📅';
