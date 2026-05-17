@@ -908,15 +908,29 @@ const TYPE_EMOJIS = {
   'marche-puces':'🐾',
 };
 
-function evCity(ev) {
-  if (ev.geo && ev.geo.city) return ev.geo.city;
-  const loc = ev.location || '';
-  const parts = loc.split(',');
+const _VENUE_PREFIX_RE = /^(salle|stade|terrain|gymnase|espace|école|ecole|eglise|église|mairie|boulodrome|complexe|centre|foyer|bois|parc|manège|manege|domaine|ferme|château|chateau|champ|propriété|propriete|parking|rue\b|avenue|boulevard|allée|allee|chemin|route\b|place\b|impasse|esplanade|parvis|promenade|quai|cours\b|lieu.dit|lieudit)/i;
+
+function _extractCity(location) {
+  if (!location) return '';
+  const parts = location.split(',');
   for (let i = parts.length - 1; i >= 0; i--) {
     const c = parts[i].trim().replace(/^\d{4,5}\s*/, '').trim();
-    if (c.length >= 2 && c.length < 50) return c;
+    if (c.length >= 2 && c.length < 50 && !_VENUE_PREFIX_RE.test(c)) return c;
   }
   return '';
+}
+
+function evCity(ev) {
+  const loc = ev.location || '';
+  const extracted = _extractCity(loc);
+  // Single-word extracted city = venue IS the commune name (most reliable)
+  const singleWord = (extracted && !extracted.includes(' ')) ? extracted : '';
+
+  // addressLocality from JSON-LD (validated: discard venue/street names)
+  let evCityVal = ev.city || '';
+  if (evCityVal && _VENUE_PREFIX_RE.test(evCityVal)) evCityVal = '';
+
+  return singleWord || evCityVal || (ev.geo && ev.geo.city) || extracted || '';
 }
 
 /* ── Tabs ── */
