@@ -8,23 +8,38 @@ from icalendar import Alarm, Calendar, Event, vText
 logger = logging.getLogger(__name__)
 
 # ── Type → emoji + label ─────────────────────────────────────────────────────
-# Set A chosen by user:  🛍️ brocante · 📦 vide-grenier · 🏷️ braderie
-#                        👗 bourse · 🐾 marché-puces · 📅 autre
+# Types mirror the brocabrac.fr search-what selector.
 _TYPE_EMOJIS = {
-    "brocante":    "🛍️",
-    "vide-grenier": "📦",
-    "braderie":    "🏷️",
-    "bourse":      "👗",
-    "marche-puces": "🐾",
-    "autre":       "📅",
+    "brocante":          "🛍️",
+    "vide-grenier":      "📦",
+    "vide-dressing":     "👗",
+    "vide-maison":       "🏠",
+    "bourse":            "👛",
+    "bourse-livres":     "📚",
+    "bourse-collection": "🏆",
+    "bourse-jouets":     "🧸",
+    "bourse-vetements":  "🧥",
+    "braderie":          "🏷️",
+    "marche-livres":     "📖",
+    "marche-noel":       "🎄",
+    "marche-puces":      "🐾",
+    "autre":             "📅",
 }
 
 _TYPE_LABELS = {
-    "brocante":    "Brocante",
-    "vide-grenier": "Vide-grenier",
-    "braderie":    "Braderie",
-    "bourse":      "Bourse",
-    "marche-puces": "Marché aux puces",
+    "brocante":          "Brocante",
+    "vide-grenier":      "Vide-grenier",
+    "vide-dressing":     "Vide-Dressing",
+    "vide-maison":       "Vide-Maison",
+    "bourse":            "Bourse",
+    "bourse-livres":     "Bourse aux livres",
+    "bourse-collection": "Bourse de collection",
+    "bourse-jouets":     "Bourse aux jouets",
+    "bourse-vetements":  "Bourse aux vêtements",
+    "braderie":          "Braderie",
+    "marche-livres":     "Marché aux livres",
+    "marche-noel":       "Marché de Noël",
+    "marche-puces":      "Marché aux puces",
     # "autre" intentionally omitted → no label printed
 }
 

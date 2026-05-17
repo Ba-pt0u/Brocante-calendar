@@ -464,8 +464,23 @@ class TestClassifyEvent:
         assert _classify_event("Braderie annuelle de la commune") == "braderie"
 
     def test_bourse(self):
-        assert _classify_event("Bourse aux vêtements enfants") == "bourse"
-        assert _classify_event("Bourse aux jouets") == "bourse"
+        assert _classify_event("Bourse aux vêtements enfants") == "bourse-vetements"
+        assert _classify_event("Bourse aux jouets") == "bourse-jouets"
+        assert _classify_event("Bourse aux livres, CD et DVD") == "bourse-livres"
+        assert _classify_event("Bourse de collection") == "bourse-collection"
+        assert _classify_event("Grande bourse") == "bourse"
+
+    def test_vide_dressing(self):
+        assert _classify_event("Vide-Dressing de printemps") == "vide-dressing"
+
+    def test_vide_maison(self):
+        assert _classify_event("Vide-Maison complet") == "vide-maison"
+
+    def test_marche_livres(self):
+        assert _classify_event("Marché aux livres anciens") == "marche-livres"
+
+    def test_marche_noel(self):
+        assert _classify_event("Marché de Noël") == "marche-noel"
 
     def test_marche_puces(self):
         assert _classify_event("Marché aux puces") == "marche-puces"

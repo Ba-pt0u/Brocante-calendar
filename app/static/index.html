@@ -345,11 +345,19 @@
     .sb-vg { background: #EEF5EB; color: var(--sage-dk);  border: 1px solid #B0D0A0; }
     .sb-xx { background: var(--cream-mid); color: var(--ink-lt); border: 1px solid var(--cream-dark); }
     /* Event type badges */
-    .sb-type-brocante   { background: #FFF0E8; color: var(--rust-dk);  border: 1px solid #F0C0A0; }
-    .sb-type-vide-grenier { background: #EEF5EB; color: var(--sage-dk); border: 1px solid #B0D0A0; }
-    .sb-type-braderie   { background: #F2EDFF; color: #5B3FA0;         border: 1px solid #C9B8F0; }
-    .sb-type-bourse     { background: #E8F4FF; color: #1A5FAE;         border: 1px solid #A0C8F0; }
-    .sb-type-marche-puces { background: #FFF8E6; color: #7A5800;       border: 1px solid #F0D880; }
+    .sb-type-brocante        { background: #FFF0E8; color: var(--rust-dk);  border: 1px solid #F0C0A0; }
+    .sb-type-vide-grenier    { background: #EEF5EB; color: var(--sage-dk); border: 1px solid #B0D0A0; }
+    .sb-type-vide-dressing   { background: #FDE8F4; color: #8B1A6B;        border: 1px solid #F0A8D8; }
+    .sb-type-vide-maison     { background: #E8F4F0; color: #1A6B50;        border: 1px solid #90D4BC; }
+    .sb-type-braderie        { background: #F2EDFF; color: #5B3FA0;        border: 1px solid #C9B8F0; }
+    .sb-type-bourse          { background: #E8F4FF; color: #1A5FAE;        border: 1px solid #A0C8F0; }
+    .sb-type-bourse-livres   { background: #FFF8E6; color: #7A5800;        border: 1px solid #F0D880; }
+    .sb-type-bourse-collection { background: #F5EFF8; color: #6A3080;      border: 1px solid #D0B0E8; }
+    .sb-type-bourse-jouets   { background: #FFF0E0; color: #A04800;        border: 1px solid #F0C080; }
+    .sb-type-bourse-vetements{ background: #FDE8F4; color: #8B1A6B;        border: 1px solid #F0A8D8; }
+    .sb-type-marche-livres   { background: #E8F2F8; color: #1A4F7A;        border: 1px solid #90C0E0; }
+    .sb-type-marche-noel     { background: #F0FAF0; color: #1A6B20;        border: 1px solid #90D890; }
+    .sb-type-marche-puces    { background: #FFF8E6; color: #7A5800;        border: 1px solid #F0D880; }
     /* City chip on location line */
     .ev-city {
       display: inline-block; font-size: .72rem; font-weight: 600;
@@ -551,10 +559,19 @@
     <div class="coll-body" id="ics-body">
       <div class="ics-types">
         <div class="ics-types-label">Types d'événements à inclure</div>
-        <button class="ics-type-btn on" data-t="brocante"     onclick="toggleIcsType('brocante')">🛍️ Brocante</button>
-        <button class="ics-type-btn on" data-t="vide-grenier" onclick="toggleIcsType('vide-grenier')">📦 Vide-grenier</button>
-        <button class="ics-type-btn on" data-t="braderie"     onclick="toggleIcsType('braderie')">🏷️ Braderie</button>
-        <button class="ics-type-btn on" data-t="bourse"       onclick="toggleIcsType('bourse')">👗 Bourse</button>
+        <button class="ics-type-btn on" data-t="brocante"          onclick="toggleIcsType('brocante')">🛍️ Brocante</button>
+        <button class="ics-type-btn on" data-t="vide-grenier"     onclick="toggleIcsType('vide-grenier')">📦 Vide-grenier</button>
+        <button class="ics-type-btn on" data-t="vide-dressing"    onclick="toggleIcsType('vide-dressing')">👗 Vide-Dressing</button>
+        <button class="ics-type-btn on" data-t="vide-maison"      onclick="toggleIcsType('vide-maison')">🏠 Vide-Maison</button>
+        <button class="ics-type-btn on" data-t="braderie"         onclick="toggleIcsType('braderie')">🏷️ Braderie</button>
+        <button class="ics-type-btn on" data-t="bourse"           onclick="toggleIcsType('bourse')">👛 Bourse</button>
+        <button class="ics-type-btn on" data-t="bourse-livres"    onclick="toggleIcsType('bourse-livres')">📚 Bourse aux livres</button>
+        <button class="ics-type-btn on" data-t="bourse-collection" onclick="toggleIcsType('bourse-collection')">🏆 Bourse de collection</button>
+        <button class="ics-type-btn on" data-t="bourse-jouets"    onclick="toggleIcsType('bourse-jouets')">🧸 Bourse aux jouets</button>
+        <button class="ics-type-btn on" data-t="bourse-vetements" onclick="toggleIcsType('bourse-vetements')">🧥 Bourse aux vêtements</button>
+        <button class="ics-type-btn on" data-t="marche-livres"    onclick="toggleIcsType('marche-livres')">📖 Marché aux livres</button>
+        <button class="ics-type-btn on" data-t="marche-noel"      onclick="toggleIcsType('marche-noel')">🎄 Marché de Noël</button>
+        <button class="ics-type-btn on" data-t="marche-puces"     onclick="toggleIcsType('marche-puces')">🐾 Marché aux puces</button>
       </div>
       <div class="ics-row">
         <div class="ics-url" id="ics-url"></div>
@@ -590,6 +607,7 @@
       <button class="tab" data-f="weekend">Week-end <span class="n" id="n-wknd">0</span></button>
       <button class="tab" data-f="brocante">Brocantes <span class="n" id="n-broc">0</span></button>
       <button class="tab" data-f="vide-grenier">Vide-greniers <span class="n" id="n-vide">0</span></button>
+      <button class="tab" data-f="vide-dressing">Vide-Dressings <span class="n" id="n-vdr">0</span></button>
       <button class="tab" data-f="braderie">Braderies <span class="n" id="n-brad">0</span></button>
       <button class="tab" data-f="bourse">Bourses <span class="n" id="n-brs">0</span></button>
     </div>
@@ -640,7 +658,11 @@ const MO_SHORT = ['jan','fév','mar','avr','mai','juin','juil','août','sep','oc
 
 /* ── State ── */
 let _events = [], _filter = 'all', _wasRefreshing = false;
-const _ICS_ALL_TYPES = ['brocante', 'vide-grenier', 'braderie', 'bourse'];
+const _ICS_ALL_TYPES = [
+  'brocante', 'vide-grenier', 'vide-dressing', 'vide-maison',
+  'braderie', 'bourse', 'bourse-livres', 'bourse-collection', 'bourse-jouets', 'bourse-vetements',
+  'marche-livres', 'marche-noel', 'marche-puces',
+];
 let _icsTypes = new Set(_ICS_ALL_TYPES); // all selected by default
 
 /* ── Map state ── */
@@ -882,30 +904,53 @@ function updateStats(evs) {
 
 /* ── Event type helpers ── */
 function evType(ev) {
-  // Use backend-classified type when available; fall back to title heuristic
   if (ev.ev_type && ev.ev_type !== 'autre') return ev.ev_type;
   const t = (ev.title || '').toLowerCase();
-  if (/vide.?grenier/.test(t))              return 'vide-grenier';
-  if (/braderie/.test(t))                   return 'braderie';
-  if (/march[eé].{0,8}puce|puce de/.test(t)) return 'marche-puces';
-  if (/\bbourse\b/.test(t))                 return 'bourse';
-  if (/brocante/.test(t))                   return 'brocante';
+  if (/vide.?grenier/.test(t))                              return 'vide-grenier';
+  if (/vide.?dressing/.test(t))                             return 'vide-dressing';
+  if (/vide.?maison/.test(t))                               return 'vide-maison';
+  if (/braderie/.test(t))                                   return 'braderie';
+  if (/bourse.{0,15}(?:livres?|cd|dvd|jeux)/.test(t))      return 'bourse-livres';
+  if (/bourse.{0,10}collection/.test(t))                    return 'bourse-collection';
+  if (/bourse.{0,15}(?:jouets?|pu[eé]ri)/.test(t))         return 'bourse-jouets';
+  if (/bourse.{0,15}(?:v[eê]tements?)/.test(t))            return 'bourse-vetements';
+  if (/march[eé].{0,8}livres?/.test(t))                    return 'marche-livres';
+  if (/march[eé].{0,10}no[eë]l|no[eë]l.{0,10}march[eé]/.test(t)) return 'marche-noel';
+  if (/march[eé].{0,8}puce|puce de/.test(t))               return 'marche-puces';
+  if (/\bbourse\b/.test(t))                                 return 'bourse';
+  if (/brocante/.test(t))                                   return 'brocante';
   return 'autre';
 }
 
 const TYPE_LABELS = {
-  'brocante':    'Brocante',
-  'vide-grenier':'Vide-grenier',
-  'braderie':    'Braderie',
-  'bourse':      'Bourse',
-  'marche-puces':'Marché aux puces',
+  'brocante':          'Brocante',
+  'vide-grenier':      'Vide-grenier',
+  'vide-dressing':     'Vide-Dressing',
+  'vide-maison':       'Vide-Maison',
+  'bourse':            'Bourse',
+  'bourse-livres':     'Bourse aux livres',
+  'bourse-collection': 'Bourse de collection',
+  'bourse-jouets':     'Bourse aux jouets',
+  'bourse-vetements':  'Bourse aux vêtements',
+  'braderie':          'Braderie',
+  'marche-livres':     'Marché aux livres',
+  'marche-noel':       'Marché de Noël',
+  'marche-puces':      'Marché aux puces',
 };
 const TYPE_EMOJIS = {
-  'brocante':    '🛍️',
-  'vide-grenier':'📦',
-  'braderie':    '🏷️',
-  'bourse':      '👗',
-  'marche-puces':'🐾',
+  'brocante':          '🛍️',
+  'vide-grenier':      '📦',
+  'vide-dressing':     '👗',
+  'vide-maison':       '🏠',
+  'bourse':            '👛',
+  'bourse-livres':     '📚',
+  'bourse-collection': '🏆',
+  'bourse-jouets':     '🧸',
+  'bourse-vetements':  '🧥',
+  'braderie':          '🏷️',
+  'marche-livres':     '📖',
+  'marche-noel':       '🎄',
+  'marche-puces':      '🐾',
 };
 
 const _VENUE_PREFIX_RE = /^(salle|stade|terrain|gymnase|espace|école|ecole|eglise|église|mairie|boulodrome|complexe|centre|foyer|bois|parc|manège|manege|domaine|ferme|château|chateau|champ|propriété|propriete|parking|rue\b|avenue|boulevard|allée|allee|chemin|route\b|place\b|impasse|esplanade|parvis|promenade|quai|cours\b|lieu.dit|lieudit)/i;
@@ -940,8 +985,9 @@ function updateTabCounts(evs) {
   document.getElementById('n-wknd').textContent = evs.filter(e=>e.date_parsed===sat||e.date_parsed===sun).length;
   document.getElementById('n-broc').textContent = evs.filter(e=>evType(e)==='brocante').length;
   document.getElementById('n-vide').textContent = evs.filter(e=>evType(e)==='vide-grenier').length;
+  document.getElementById('n-vdr').textContent  = evs.filter(e=>evType(e)==='vide-dressing').length;
   document.getElementById('n-brad').textContent = evs.filter(e=>evType(e)==='braderie').length;
-  document.getElementById('n-brs').textContent  = evs.filter(e=>evType(e)==='bourse').length;
+  document.getElementById('n-brs').textContent  = evs.filter(e=>evType(e).startsWith('bourse')).length;
 }
 
 function initTabs() {
@@ -957,11 +1003,12 @@ function initTabs() {
 
 function applyFilter(evs, f) {
   const {sat,sun} = weekendISO();
-  if (f === 'weekend')     return evs.filter(e=>e.date_parsed===sat||e.date_parsed===sun);
-  if (f === 'brocante')    return evs.filter(e=>evType(e)==='brocante');
-  if (f === 'vide-grenier')return evs.filter(e=>evType(e)==='vide-grenier');
-  if (f === 'braderie')    return evs.filter(e=>evType(e)==='braderie');
-  if (f === 'bourse')      return evs.filter(e=>evType(e)==='bourse');
+  if (f === 'weekend')      return evs.filter(e=>e.date_parsed===sat||e.date_parsed===sun);
+  if (f === 'brocante')     return evs.filter(e=>evType(e)==='brocante');
+  if (f === 'vide-grenier') return evs.filter(e=>evType(e)==='vide-grenier');
+  if (f === 'vide-dressing') return evs.filter(e=>evType(e)==='vide-dressing');
+  if (f === 'braderie')     return evs.filter(e=>evType(e)==='braderie');
+  if (f === 'bourse')       return evs.filter(e=>evType(e).startsWith('bourse'));
   return evs;
 }
 

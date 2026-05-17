@@ -115,12 +115,21 @@ def _dept_from_postcode(postcode: str) -> str:
 
 
 # ── Event type classification ──────────────────────────────────────────────────
+# Order matters: specific patterns before generic ones.
 _TYPE_PATTERNS = [
-    ("vide-grenier", re.compile(r"vide.?grenier", re.IGNORECASE)),
-    ("braderie",     re.compile(r"braderie", re.IGNORECASE)),
-    ("marche-puces", re.compile(r"march[eé].{0,8}puce|puce de", re.IGNORECASE)),
-    ("bourse",       re.compile(r"\bbourse\b", re.IGNORECASE)),
-    ("brocante",     re.compile(r"brocante", re.IGNORECASE)),
+    ("vide-grenier",      re.compile(r"vide.?grenier", re.IGNORECASE)),
+    ("vide-dressing",     re.compile(r"vide.?dressing", re.IGNORECASE)),
+    ("vide-maison",       re.compile(r"vide.?maison", re.IGNORECASE)),
+    ("braderie",          re.compile(r"braderie", re.IGNORECASE)),
+    ("bourse-livres",     re.compile(r"bourse.{0,15}(?:livres?|cd|dvd|jeux)", re.IGNORECASE)),
+    ("bourse-collection", re.compile(r"bourse.{0,10}collection", re.IGNORECASE)),
+    ("bourse-jouets",     re.compile(r"bourse.{0,15}(?:jouets?|puéri|puericulture)", re.IGNORECASE)),
+    ("bourse-vetements",  re.compile(r"bourse.{0,15}(?:vêtements?|vetements?)", re.IGNORECASE)),
+    ("marche-livres",     re.compile(r"march[eé].{0,8}livres?", re.IGNORECASE)),
+    ("marche-noel",       re.compile(r"march[eé].{0,10}no[eë]l|no[eë]l.{0,10}march[eé]", re.IGNORECASE)),
+    ("marche-puces",      re.compile(r"march[eé].{0,8}puce|puce de", re.IGNORECASE)),
+    ("bourse",            re.compile(r"\bbourse\b", re.IGNORECASE)),
+    ("brocante",          re.compile(r"brocante", re.IGNORECASE)),
 ]
 
 

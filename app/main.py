@@ -104,7 +104,11 @@ async def index():
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
-_VALID_TYPES = {"brocante", "vide-grenier", "braderie", "bourse", "marche-puces", "autre"}
+_VALID_TYPES = {
+    "brocante", "vide-grenier", "vide-dressing", "vide-maison",
+    "bourse", "bourse-livres", "bourse-collection", "bourse-jouets", "bourse-vetements",
+    "braderie", "marche-livres", "marche-noel", "marche-puces", "autre",
+}
 
 
 @app.get("/feed.ics", response_class=Response)
