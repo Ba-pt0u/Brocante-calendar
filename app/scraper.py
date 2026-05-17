@@ -213,6 +213,16 @@ def make_uid(title: str, event_date: str, location: str) -> str:
 
 
 def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
+    # Map brocabrac event_id → size label (from .dots[title] next to each .ev div)
+    dots_map: dict[str, str] = {}
+    for ev_div in soup.find_all("div", attrs={"data-event-id": True}):
+        event_id = ev_div.get("data-event-id", "").strip()
+        dots_span = ev_div.find("span", class_="dots")
+        if event_id and dots_span:
+            label = (dots_span.get("title") or "").strip()
+            if label:
+                dots_map[event_id] = label
+
     events = []
     for script in soup.find_all("script", type="application/ld+json"):
         try:
@@ -258,6 +268,9 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
             parsed = parse_french_date(start)
             if title and parsed and parsed >= date.today():
                 uid = make_uid(title, str(parsed), location)
+                ld_id = item.get("@id", "")
+                ev_id_m = re.search(r"/evenement/(\d+)", ld_id)
+                size_label = dots_map.get(ev_id_m.group(1), "") if ev_id_m else ""
                 ev = {
                     "title": title,
                     "date_parsed": str(parsed),
@@ -267,6 +280,7 @@ def _parse_jsonld(soup: BeautifulSoup, base_url: str, source_name: str) -> list:
                     "uid": uid,
                     "source": source_name,
                     "ev_type": _classify_event(title),
+                    "size_label": size_label,
                 }
                 if geo_query != location:
                     ev["geo_query"] = geo_query

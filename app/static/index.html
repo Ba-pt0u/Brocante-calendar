@@ -343,6 +343,11 @@
     }
     .sb-bb { background: #FFF0E8; color: var(--rust);     border: 1px solid #F0C0A0; }
     .sb-xx { background: var(--cream-mid); color: var(--ink-lt); border: 1px solid var(--cream-dark); }
+    .ev-dots {
+      display: inline-block; font-size: .78rem;
+      color: var(--rust-lt); letter-spacing: .15em;
+      cursor: default; flex-shrink: 0;
+    }
     /* Event type badges */
     .sb-type-brocante        { background: #FFF0E8; color: var(--rust-dk);  border: 1px solid #F0C0A0; }
     .sb-type-vide-grenier    { background: #EEF5EB; color: var(--sage-dk); border: 1px solid #B0D0A0; }
@@ -1074,6 +1079,14 @@ function evHtml(ev, sat, sun, today, idx) {
   const src    = ev.source || '';
   const srcCls = src.includes('brocabrac') ? 'sb-bb' : 'sb-xx';
 
+  const _DOTS_MAP = {
+    'Moins de 50':  '•', 'De 50 à 100': '••',
+    'De 100 à 200': '•••', 'De 200 à 300': '••••', 'Plus de 300': '•••••',
+  };
+  const sizeLabel = ev.size_label || '';
+  const dotStr    = _DOTS_MAP[sizeLabel] || '';
+  const dotsHtml  = dotStr ? `<span class="ev-dots" title="${esc(sizeLabel)}">${dotStr}</span>` : '';
+
   const t      = evType(ev);
   const emoji  = TYPE_EMOJIS[t] || '📅';
   const city   = evCity(ev);
@@ -1088,7 +1101,7 @@ function evHtml(ev, sat, sun, today, idx) {
     <div class="ev-body">
       <div class="ev-title-row">${title}${tb}</div>
       ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}${postalTag(ev)}</div>`:''}
-      <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span></div>
+      <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span>${dotsHtml}</div>
     </div>
   </div>`;
 }

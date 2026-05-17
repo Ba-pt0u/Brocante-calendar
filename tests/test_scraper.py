@@ -33,38 +33,47 @@ from app.scraper import (
 
 # ── HTML fixtures (future dates so past-event filter doesn't discard them) ────
 
-BROCABRAC_JSONLD = """<!DOCTYPE html><html><head>
+BROCABRAC_JSONLD = """<!DOCTYPE html><html><head></head><body>
+<h1>Brocantes près de Lyon</h1>
+<div class="ev" data-event-id="123">
 <script type="application/ld+json">
-[
-  {
-    "@context": "https://schema.org",
-    "@type": "Event",
-    "name": "Grande Brocante de Lyon",
-    "startDate": "2026-07-15",
-    "location": {
-      "@type": "Place",
-      "name": "Place Bellecour",
-      "address": {
-        "@type": "PostalAddress",
-        "streetAddress": "Place Bellecour",
-        "postalCode": "69002",
-        "addressLocality": "Lyon"
-      }
-    },
-    "description": "Brocante mensuelle",
-    "url": "https://brocabrac.fr/event/123"
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "@id": "https://brocabrac.fr/evenement/123?d=2026-07-15",
+  "name": "Grande Brocante de Lyon",
+  "startDate": "2026-07-15",
+  "location": {
+    "@type": "Place",
+    "name": "Place Bellecour",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "Place Bellecour",
+      "postalCode": "69002",
+      "addressLocality": "Lyon"
+    }
   },
-  {
-    "@context": "https://schema.org",
-    "@type": "Event",
-    "name": "Vide-grenier Villeurbanne",
-    "startDate": "2026-07-22",
-    "location": {"@type": "Place", "name": "Place de la Mairie, Villeurbanne"},
-    "url": "https://brocabrac.fr/event/456"
-  }
-]
+  "description": "Brocante mensuelle",
+  "url": "https://brocabrac.fr/event/123"
+}
 </script>
-</head><body><h1>Brocantes près de Lyon</h1></body></html>"""
+<span class="dots" title="De 100 à 200">&bull;&bull;&bull;</span>
+</div>
+<div class="ev" data-event-id="456">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Event",
+  "@id": "https://brocabrac.fr/evenement/456?d=2026-07-22",
+  "name": "Vide-grenier Villeurbanne",
+  "startDate": "2026-07-22",
+  "location": {"@type": "Place", "name": "Place de la Mairie, Villeurbanne"},
+  "url": "https://brocabrac.fr/event/456"
+}
+</script>
+<span class="dots" title="De 50 à 100">&bull;&bull;</span>
+</div>
+</body></html>"""
 
 # Event with venue-only name and no city in location — typical "Les Framboisines" case
 BROCABRAC_VENUE_ONLY = """<!DOCTYPE html><html><head>
@@ -229,6 +238,27 @@ class TestParseJsonld:
     def test_empty_page(self):
         soup = self._soup(EMPTY_HTML)
         assert _parse_jsonld(soup, "https://x.com", "test") == []
+
+    def test_size_label_extracted_from_dots(self):
+        soup = self._soup(BROCABRAC_JSONLD)
+        events = _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")
+        assert events[0]["size_label"] == "De 100 à 200"
+        assert events[1]["size_label"] == "De 50 à 100"
+
+    def test_size_label_empty_when_no_dots(self):
+        html = """<!DOCTYPE html><html><body>
+        <div class="ev" data-event-id="789">
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"Event",
+         "@id":"https://brocabrac.fr/evenement/789?d=2026-09-01",
+         "name":"Vide maison","startDate":"2026-09-01",
+         "location":{"name":"Rue de la Paix"},"url":"https://brocabrac.fr/x"}
+        </script>
+        <span class="dots" title=""></span>
+        </div></body></html>"""
+        soup = self._soup(html)
+        ev = _parse_jsonld(soup, "https://brocabrac.fr", "brocabrac.fr")[0]
+        assert ev["size_label"] == ""
 
 
 # ── Unit: _find_next_page ─────────────────────────────────────────────────────
