@@ -376,6 +376,30 @@ class TestPostConfig:
         assert resp.json()["purged"] is False
         assert len(load_events()) == 1
 
+    def test_watch_keywords_accepted(self, client):
+        payload = {**self.VALID_PAYLOAD, "watch_keywords": ["Saint-Arnoult"]}
+        resp = client.post("/api/config", json=payload)
+        assert resp.status_code == 200
+
+    def test_watch_keywords_persisted(self, client, isolated_data):
+        payload = {**self.VALID_PAYLOAD, "watch_keywords": ["Limours", "Rambouillet"]}
+        client.post("/api/config", json=payload)
+        loaded = cfg.load_config()
+        assert loaded.get("watch_keywords") == ["Limours", "Rambouillet"]
+
+    def test_watch_keywords_absent_defaults_to_empty(self, client, isolated_data):
+        client.post("/api/config", json=self.VALID_PAYLOAD)
+        loaded = cfg.load_config()
+        assert loaded.get("watch_keywords") == []
+
+    def test_keyword_change_invalidates_ics_cache(self, client, isolated_data):
+        import app.main as m
+        client.post("/api/config", json=self.VALID_PAYLOAD)
+        client.get("/feed.ics")  # populate cache
+        assert m._state["ics_cache"] != {}
+        client.post("/api/config", json={**self.VALID_PAYLOAD, "watch_keywords": ["Lyon"]})
+        assert m._state["ics_cache"] == {}
+
 
 # ── DELETE /api/events ────────────────────────────────────────────────────────
 
@@ -432,6 +456,46 @@ class TestGetEvents:
         save_events([{"title": "Brocante Lyon", "uid": "u1", "date_parsed": "2026-07-15"}])
         data = client.get("/api/events").json()
         assert data["events"][0]["title"] == "Brocante Lyon"
+
+
+# ── GET /api/events — starred field ──────────────────────────────────────────
+
+@pytest.mark.integration
+class TestGetEventsStarred:
+    _EVENTS = [
+        {"title": "Brocante de Saint-Arnoult", "uid": "sa-01",
+         "date_parsed": "2026-07-15", "location": "Saint-Arnoult-en-Yvelines",
+         "ev_type": "brocante"},
+        {"title": "Vide-grenier Versailles", "uid": "vs-01",
+         "date_parsed": "2026-07-22", "location": "Versailles",
+         "ev_type": "vide-grenier"},
+    ]
+
+    def test_starred_field_present_on_all_events(self, client, isolated_data):
+        save_events(self._EVENTS)
+        data = client.get("/api/events").json()
+        for ev in data["events"]:
+            assert "starred" in ev
+
+    def test_starred_true_when_keyword_matches(self, client, isolated_data):
+        save_config({**cfg.DEFAULT_CONFIG, "watch_keywords": ["Saint-Arnoult"]})
+        save_events(self._EVENTS)
+        data = client.get("/api/events").json()
+        sa = next(e for e in data["events"] if "Saint-Arnoult" in e["title"])
+        assert sa["starred"] is True
+
+    def test_starred_false_when_no_match(self, client, isolated_data):
+        save_config({**cfg.DEFAULT_CONFIG, "watch_keywords": ["Saint-Arnoult"]})
+        save_events(self._EVENTS)
+        data = client.get("/api/events").json()
+        vs = next(e for e in data["events"] if "Versailles" in e["title"])
+        assert vs["starred"] is False
+
+    def test_all_unstarred_when_no_keywords(self, client, isolated_data):
+        save_config({**cfg.DEFAULT_CONFIG, "watch_keywords": []})
+        save_events(self._EVENTS)
+        data = client.get("/api/events").json()
+        assert all(e["starred"] is False for e in data["events"])
 
 
 # ── POST /api/refresh ─────────────────────────────────────────────────────────

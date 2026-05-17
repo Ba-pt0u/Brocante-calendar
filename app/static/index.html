@@ -484,6 +484,23 @@
       padding: .35rem .9rem; font-size: .78rem;
     }
 
+    /* ── Watchlist ── */
+    .kw-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .75rem; min-height: 1.8rem; align-items: center; }
+    .kw-chip {
+      display: inline-flex; align-items: center; gap: .3rem;
+      background: var(--rust-glow); border: 1.5px solid var(--rust-lt);
+      border-radius: 20px; padding: .15rem .6rem .15rem .75rem;
+      font-size: .82rem; color: var(--rust-dk);
+    }
+    .kw-chip-del {
+      cursor: pointer; color: var(--rust);
+      background: none; border: none; padding: 0 .1rem; line-height: 1; font-size: .8rem;
+    }
+    .kw-chip-del:hover { color: var(--rust-dk); }
+    .kw-add-row { display: flex; gap: .5rem; }
+    .kw-add-row input { flex: 1; }
+    .tb-starred { background: #FFF8DC; color: #7A5800; border: 1px solid #F0D060; }
+
     /* ── Responsive ── */
     @media (max-width: 520px) {
       header { padding: 1.1rem 1rem; }
@@ -598,6 +615,21 @@
     </div>
   </div>
 
+  <!-- ── Watchlist ── -->
+  <div class="card" id="wl-card">
+    <div class="card-title">⭐ Mots-clés favoris</div>
+    <p style="font-size:.84rem;color:var(--gray);margin:.2rem 0 .75rem;">
+      Les événements dont le titre ou la ville contient un de ces mots-clés seront
+      marqués ⭐ dans votre calendrier iPhone avec une alerte 3 semaines avant.
+    </p>
+    <div class="kw-chips" id="kw-chips"></div>
+    <div class="kw-add-row">
+      <input type="text" id="kw-inp" placeholder="Saint-Arnoult, Limours…"
+             onkeydown="if(event.key==='Enter')addKeyword()" />
+      <button class="btn btn-ghost" onclick="addKeyword()">+ Ajouter</button>
+    </div>
+  </div>
+
   <!-- ── Events ── -->
   <div class="card" id="ev-card">
     <div class="card-title">
@@ -614,6 +646,7 @@
       <button class="tab" data-f="vide-dressing">Vide-Dressings <span class="n" id="n-vdr">0</span></button>
       <button class="tab" data-f="braderie">Braderies <span class="n" id="n-brad">0</span></button>
       <button class="tab" data-f="bourse">Bourses <span class="n" id="n-brs">0</span></button>
+      <button class="tab" data-f="starred">⭐ Favoris <span class="n" id="n-starred">0</span></button>
     </div>
 
     <!-- Map view (hidden by default) -->
@@ -662,6 +695,7 @@ const MO_SHORT = ['jan','fév','mar','avr','mai','juin','juil','août','sep','oc
 
 /* ── State ── */
 let _events = [], _filter = 'all', _wasRefreshing = false;
+let _watchKeywords = [];
 const _ICS_ALL_TYPES = [
   'brocante', 'vide-grenier', 'vide-dressing', 'vide-maison',
   'braderie', 'bourse', 'bourse-livres', 'bourse-collection', 'bourse-jouets', 'bourse-vetements',
@@ -730,6 +764,8 @@ async function loadConfig() {
     document.getElementById('radius-sel').value  = c.radius_km    || 30;
     document.getElementById('refresh-sel').value = c.refresh_hours || 12;
     if (c.city) setGeo(`✅ ${c.city} (${(+c.lat).toFixed(4)}, ${(+c.lng).toFixed(4)})`);
+    _watchKeywords = c.watch_keywords || [];
+    renderKeywordChips();
   } catch {}
 }
 
@@ -747,6 +783,7 @@ async function saveConfig() {
       lat: geo.lat, lng: geo.lng, city: geo.city,
       radius_km:     +document.getElementById('radius-sel').value,
       refresh_hours: +document.getElementById('refresh-sel').value,
+      watch_keywords: _watchKeywords,
     }});
     toast('Scan lancé…', 'success');
     skeleton();
@@ -991,7 +1028,9 @@ function updateTabCounts(evs) {
   document.getElementById('n-vide').textContent = evs.filter(e=>evType(e)==='vide-grenier').length;
   document.getElementById('n-vdr').textContent  = evs.filter(e=>evType(e)==='vide-dressing').length;
   document.getElementById('n-brad').textContent = evs.filter(e=>evType(e)==='braderie').length;
-  document.getElementById('n-brs').textContent  = evs.filter(e=>evType(e).startsWith('bourse')).length;
+  document.getElementById('n-brs').textContent     = evs.filter(e=>evType(e).startsWith('bourse')).length;
+  const starEl = document.getElementById('n-starred');
+  if (starEl) starEl.textContent = evs.filter(e => e.starred).length;
 }
 
 function initTabs() {
@@ -1007,6 +1046,7 @@ function initTabs() {
 
 function applyFilter(evs, f) {
   const {sat,sun} = weekendISO();
+  if (f === 'starred')      return evs.filter(e => e.starred);
   if (f === 'weekend')      return evs.filter(e=>e.date_parsed===sat||e.date_parsed===sun);
   if (f === 'brocante')     return evs.filter(e=>evType(e)==='brocante');
   if (f === 'vide-grenier') return evs.filter(e=>evType(e)==='vide-grenier');
@@ -1069,6 +1109,8 @@ function evHtml(ev, sat, sun, today, idx) {
   }
   const badgeCls = 'badge' + (isWknd?' wknd':isSoon?' soon':'');
 
+  const starBadge = ev.starred ? `<span class="tb tb-starred">⭐</span>` : '';
+
   let tb = '';
   if (diff === 0)        tb = `<span class="tb tb-today">Aujourd'hui</span>`;
   else if (diff === 1)   tb = `<span class="tb tb-tomorrow">Demain</span>`;
@@ -1099,7 +1141,7 @@ function evHtml(ev, sat, sun, today, idx) {
   return `<div class="ev" style="animation-delay:${idx*35}ms" data-title="${esc(ev.title)}" data-location="${esc(ev.location || '')}">
     <div class="${badgeCls}"><div class="day">${dayS}</div><div class="mon">${monS}</div></div>
     <div class="ev-body">
-      <div class="ev-title-row">${title}${tb}</div>
+      <div class="ev-title-row">${title}${tb}${starBadge}</div>
       ${ev.location?`<div class="ev-loc">📍 ${esc(ev.location)}${postalTag(ev)}</div>`:''}
       <div class="ev-meta"><span class="sb ${srcCls}">${esc(src||'?')}</span>${dotsHtml}</div>
     </div>
@@ -1236,6 +1278,53 @@ function toast(msg, type='info') {
     el.style.animation = 'tout .25s ease forwards';
     setTimeout(() => el.remove(), 280);
   }, 3000);
+}
+
+/* ── Watchlist ── */
+function renderKeywordChips() {
+  const container = document.getElementById('kw-chips');
+  if (!container) return;
+  if (!_watchKeywords.length) {
+    container.innerHTML = `<span style="color:var(--gray);font-size:.82rem;">Aucun mot-clé — ajoutez des communes ou titres ci-dessous</span>`;
+    return;
+  }
+  container.innerHTML = _watchKeywords.map((kw, i) =>
+    `<span class="kw-chip">${esc(kw)}<button class="kw-chip-del" onclick="removeKeyword(${i})" title="Supprimer">✕</button></span>`
+  ).join('');
+}
+
+function addKeyword() {
+  const inp = document.getElementById('kw-inp');
+  const kw  = (inp.value || '').trim();
+  if (!kw || _watchKeywords.map(k => k.toLowerCase()).includes(kw.toLowerCase())) {
+    inp.value = ''; return;
+  }
+  _watchKeywords = [..._watchKeywords, kw];
+  inp.value = '';
+  renderKeywordChips();
+  saveWatchKeywords();
+}
+
+function removeKeyword(i) {
+  _watchKeywords = _watchKeywords.filter((_, j) => j !== i);
+  renderKeywordChips();
+  saveWatchKeywords();
+}
+
+async function saveWatchKeywords() {
+  const cfg = window._loadedConfig || {};
+  if (!cfg.lat) return;
+  try {
+    await api('/api/config', { method:'POST', json:{
+      lat: cfg.lat, lng: cfg.lng, city: cfg.city,
+      radius_km: cfg.radius_km || 30,
+      refresh_hours: cfg.refresh_hours || 12,
+      watch_keywords: _watchKeywords,
+    }});
+    window._loadedConfig = {...cfg, watch_keywords: _watchKeywords};
+    toast('Favoris mis à jour', 'success');
+    await loadEvents();
+  } catch { toast('Erreur lors de la sauvegarde', 'error'); }
 }
 
 /* ── Search ── */

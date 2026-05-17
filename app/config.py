@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "city": "Paris",
     "radius_km": 30,
     "refresh_hours": 12,
+    "watch_keywords": [],
 }
 
 

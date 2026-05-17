@@ -66,6 +66,18 @@ def _context_emojis(description: str, title: str = "") -> str:
     return result
 
 
+def _is_starred(ev: dict, keywords: list) -> bool:
+    """Case-insensitive substring match on title, location, and city."""
+    if not keywords:
+        return False
+    haystack = " ".join([
+        ev.get("title") or "",
+        ev.get("location") or "",
+        ev.get("city") or "",
+    ]).lower()
+    return any(kw.lower() in haystack for kw in keywords if kw)
+
+
 def _build_summary(ev: dict) -> str:
     """
     Build the iCal SUMMARY field.
@@ -215,13 +227,21 @@ def generate_ics(events: list, config: dict) -> bytes:
     cal.add("refresh-interval", timedelta(hours=1))
     cal.add("x-apple-calendar-color", "#B8481C")
 
+    keywords = config.get("watch_keywords", [])
+
     for ev in events:
         vevent = Event()
         vevent.add("status", "CONFIRMED")
 
+        starred = _is_starred(ev, keywords)
+
         # ── SUMMARY ─────────────────────────────────────────────────────────
-        summary = _build_summary(ev)
+        base_summary = _build_summary(ev)
+        summary = f"⭐ {base_summary}" if starred else base_summary
         vevent.add("summary", summary)
+
+        if starred:
+            vevent.add("priority", 1)
 
         # ── Dates (all-day) ─────────────────────────────────────────────────
         raw_date = ev.get("date_parsed")
@@ -267,6 +287,12 @@ def generate_ics(events: list, config: dict) -> bytes:
         # ── Smart VALARM ────────────────────────────────────────────────────
         if event_date:
             _add_alarm(vevent, summary, event_date)
+            if starred:
+                early = Alarm()
+                early.add("action", "DISPLAY")
+                early.add("trigger", timedelta(days=-21))
+                early.add("description", f"⭐ Dans 3 semaines → {base_summary}")
+                vevent.add_component(early)
 
         # ── UID ─────────────────────────────────────────────────────────────
         uid_base = ev.get("uid") or hashlib.md5((ev.get("title", "")).encode()).hexdigest()

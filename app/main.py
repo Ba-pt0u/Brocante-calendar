@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-from app.calendar_gen import generate_ics
+from app.calendar_gen import generate_ics, _is_starred
 from app.config import load_config, load_events, save_config, save_events
 from app.scraper import scrape_all
 
@@ -42,6 +42,7 @@ class ConfigPayload(BaseModel):
     city: str = Field(..., min_length=1)
     radius_km: int = Field(..., gt=0, le=500)
     refresh_hours: int = Field(..., ge=1, le=168)
+    watch_keywords: list[str] = Field(default_factory=list)
 
 
 async def _do_refresh() -> None:
@@ -161,6 +162,9 @@ async def api_post_config(body: ConfigPayload):
         or abs(current.get("lng", 0) - body.lng) > 0.01
         or current.get("radius_km", 0) != body.radius_km
     )
+    old_keywords = set(current.get("watch_keywords", []))
+    keywords_changed = old_keywords != set(body.watch_keywords)
+
     save_config(body.model_dump())
     if location_changed:
         # Purge immediately so the UI doesn't show stale events from the old location
@@ -168,6 +172,8 @@ async def api_post_config(body: ConfigPayload):
         _state["events"] = []
         _state["last_refresh"] = None
         _state["ics_cache"] = {}  # invalidate all cached ICS feeds
+    elif keywords_changed:
+        _state["ics_cache"] = {}  # starred status affects ICS output
     _reschedule(body.refresh_hours)
     asyncio.create_task(_do_refresh())
     return {"status": "ok", "message": "Config saved, refresh started", "purged": location_changed}
@@ -180,6 +186,7 @@ async def api_events(
     within_days: Optional[int] = None,
 ):
     events = _state["events"] if _state["events"] is not None else load_events()
+    keywords = load_config().get("watch_keywords", [])
 
     if types:
         type_set = {t.strip() for t in types.split(",") if t.strip() in _VALID_TYPES}
@@ -198,9 +205,11 @@ async def api_events(
         cutoff = (date.today() + timedelta(days=within_days)).isoformat()
         events = [e for e in events if today <= (e.get("date_parsed") or "") <= cutoff]
 
+    tagged = [{**e, "starred": _is_starred(e, keywords)} for e in events]
+
     return {
-        "events": events,
-        "count": len(events),
+        "events": tagged,
+        "count": len(tagged),
         "last_refresh": _state["last_refresh"],
     }
 

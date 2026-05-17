@@ -24,6 +24,12 @@ class TestLoadConfig:
         for key in ("lat", "lng", "city", "radius_km", "refresh_hours"):
             assert key in result
 
+    def test_default_has_watch_keywords(self, isolated_data):
+        assert "watch_keywords" in load_config()
+
+    def test_default_watch_keywords_is_empty_list(self, isolated_data):
+        assert load_config()["watch_keywords"] == []
+
     def test_returns_copy_not_reference(self, isolated_data):
         a = load_config()
         b = load_config()

@@ -16,6 +16,7 @@ from app.calendar_gen import (
     _extract_city,
     _build_description,
     _add_alarm,
+    _is_starred,
     generate_ics,
 )
 
@@ -527,6 +528,112 @@ class TestEventProperties:
             "Brocante Test" in r.message and "32-13-2099" in r.message
             for r in caplog.records
         )
+
+
+# ── _is_starred ───────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestIsStarred:
+    def test_empty_keywords_never_starred(self):
+        assert _is_starred(BASE_EVENT, []) is False
+
+    def test_match_on_title(self):
+        ev = {**BASE_EVENT, "title": "Brocante de Saint-Arnoult"}
+        assert _is_starred(ev, ["Saint-Arnoult"]) is True
+
+    def test_match_on_location(self):
+        ev = {**BASE_EVENT, "location": "Salle des fêtes, Limours"}
+        assert _is_starred(ev, ["Limours"]) is True
+
+    def test_match_on_city_field(self):
+        ev = {**BASE_EVENT, "city": "Rambouillet"}
+        assert _is_starred(ev, ["Rambouillet"]) is True
+
+    def test_case_insensitive(self):
+        ev = {**BASE_EVENT, "title": "Brocante de saint-arnoult"}
+        assert _is_starred(ev, ["Saint-Arnoult"]) is True
+
+    def test_no_match_returns_false(self):
+        assert _is_starred(BASE_EVENT, ["Rambouillet", "Limours"]) is False
+
+    def test_multiple_keywords_any_match(self):
+        ev = {**BASE_EVENT, "title": "Brocante de Limours"}
+        assert _is_starred(ev, ["Saint-Arnoult", "Limours"]) is True
+
+    def test_partial_substring_match(self):
+        ev = {**BASE_EVENT, "title": "Brocante de Saint-Arnoult"}
+        assert _is_starred(ev, ["Saint"]) is True
+
+    def test_blank_keyword_ignored(self):
+        assert _is_starred(BASE_EVENT, [""]) is False
+
+
+# ── generate_ics — starred events ─────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestStarredIcs:
+    _STARRED_CONFIG = {**BASE_CONFIG, "watch_keywords": ["Lyon"]}
+    # BASE_EVENT has title "Grande Brocante de Lyon" → matches "Lyon"
+
+    def _vevent(self, ev=None, config=None):
+        raw = generate_ics([ev or BASE_EVENT], config or self._STARRED_CONFIG)
+        vevents = _vevents(_parse_ics(raw))
+        assert len(vevents) == 1
+        return vevents[0]
+
+    def test_starred_summary_has_star_prefix(self):
+        v = self._vevent()
+        assert str(v.get("SUMMARY")).startswith("⭐ ")
+
+    def test_non_starred_summary_has_no_star(self):
+        v = self._vevent(config={**BASE_CONFIG, "watch_keywords": ["Rambouillet"]})
+        assert not str(v.get("SUMMARY")).startswith("⭐")
+
+    def test_starred_has_priority_1(self):
+        v = self._vevent()
+        assert str(v.get("PRIORITY")) == "1"
+
+    def test_non_starred_has_no_priority(self):
+        v = self._vevent(config={**BASE_CONFIG, "watch_keywords": ["Rambouillet"]})
+        assert v.get("PRIORITY") is None
+
+    def test_starred_has_two_valarms(self):
+        assert len(_valarms(self._vevent())) == 2
+
+    def test_non_starred_has_one_valarm(self):
+        v = self._vevent(config={**BASE_CONFIG, "watch_keywords": ["Rambouillet"]})
+        assert len(_valarms(v)) == 1
+
+    def test_early_valarm_trigger_is_minus21_days(self):
+        alarms = _valarms(self._vevent())
+        triggers = [a.get("TRIGGER").dt for a in alarms]
+        assert timedelta(days=-21) in triggers
+
+    def test_early_valarm_description_contains_title(self):
+        alarms = _valarms(self._vevent())
+        early = next(a for a in alarms if a.get("TRIGGER").dt == timedelta(days=-21))
+        assert "Grande Brocante de Lyon" in str(early.get("DESCRIPTION"))
+
+    def test_early_valarm_description_has_star_emoji(self):
+        alarms = _valarms(self._vevent())
+        early = next(a for a in alarms if a.get("TRIGGER").dt == timedelta(days=-21))
+        assert "⭐" in str(early.get("DESCRIPTION"))
+
+    def test_early_valarm_description_no_double_star(self):
+        """The base summary (without ⭐ prefix) is used in the VALARM description."""
+        alarms = _valarms(self._vevent())
+        early = next(a for a in alarms if a.get("TRIGGER").dt == timedelta(days=-21))
+        desc = str(early.get("DESCRIPTION"))
+        assert desc.count("⭐") == 1
+
+    def test_no_early_valarm_when_no_date(self):
+        ev = {**BASE_EVENT, "date_parsed": None}
+        assert len(_valarms(self._vevent(ev))) == 0
+
+    def test_empty_keywords_no_star(self):
+        v = self._vevent(config={**BASE_CONFIG, "watch_keywords": []})
+        assert not str(v.get("SUMMARY")).startswith("⭐")
+        assert len(_valarms(v)) == 1
 
 
 # ── generate_ics — malformed / unparseable dates ──────────────────────────────
