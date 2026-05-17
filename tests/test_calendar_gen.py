@@ -308,6 +308,15 @@ class TestBuildDescription:
         desc = _build_description(ev)
         assert "\n\n" in desc
 
+    def test_size_label_included(self):
+        desc = _build_description({"size_label": "De 100 à 200"})
+        assert "De 100 à 200" in desc
+        assert "•••" in desc
+
+    def test_size_label_absent_when_empty(self):
+        desc = _build_description({"location": "Lyon", "size_label": ""})
+        assert "exposants" not in desc
+
 
 # ── _add_alarm ─────────────────────────────────────────────────────────────────
 

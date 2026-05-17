@@ -154,11 +154,24 @@ def _extract_city(location: str) -> str:
     return ""
 
 
+_SIZE_DOTS = {
+    "Moins de 50":  "•",
+    "De 50 à 100":  "••",
+    "De 100 à 200": "•••",
+    "De 200 à 300": "••••",
+    "Plus de 300":  "•••••",
+}
+
+
 def _build_description(ev: dict) -> str:
     """Structured multi-section description readable in iOS Calendar."""
     parts = []
     if ev.get("location"):
         parts.append(f"📍 {ev['location']}")
+    size = ev.get("size_label", "")
+    if size:
+        dots = _SIZE_DOTS.get(size, "")
+        parts.append(f"👥 {size} exposants{f'  {dots}' if dots else ''}")
     if ev.get("description"):
         parts.append(ev["description"])
     if ev.get("source"):
