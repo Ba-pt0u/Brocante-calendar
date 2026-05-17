@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -17,6 +18,8 @@ from app.scraper import scrape_all
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+FEED_TOKEN = os.environ.get("FEED_TOKEN", "")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -151,7 +154,10 @@ async def ics_feed(request: Request, types: Optional[str] = None):
 
 @app.get("/api/config")
 async def api_get_config():
-    return load_config()
+    config = load_config()
+    if FEED_TOKEN:
+        config["feed_token"] = FEED_TOKEN
+    return config
 
 
 @app.post("/api/config")

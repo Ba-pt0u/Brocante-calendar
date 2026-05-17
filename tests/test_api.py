@@ -292,6 +292,33 @@ class TestGetConfig:
         assert data["radius_km"] == 50
 
 
+# ── GET /api/config — feed_token ─────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestGetConfigFeedToken:
+    def test_feed_token_absent_when_env_not_set(self, client, monkeypatch):
+        monkeypatch.delenv("FEED_TOKEN", raising=False)
+        import app.main as m
+        m.FEED_TOKEN = ""
+        data = client.get("/api/config").json()
+        assert "feed_token" not in data
+
+    def test_feed_token_present_when_env_set(self, client, monkeypatch):
+        import app.main as m
+        m.FEED_TOKEN = "mysecrettoken"
+        data = client.get("/api/config").json()
+        assert data.get("feed_token") == "mysecrettoken"
+        m.FEED_TOKEN = ""  # reset
+
+    def test_feed_token_not_persisted_in_config_file(self, client, isolated_data, monkeypatch):
+        import app.main as m
+        m.FEED_TOKEN = "mysecrettoken"
+        client.get("/api/config")
+        loaded = cfg.load_config()
+        assert "feed_token" not in loaded
+        m.FEED_TOKEN = ""  # reset
+
+
 # ── POST /api/config ──────────────────────────────────────────────────────────
 
 @pytest.mark.integration

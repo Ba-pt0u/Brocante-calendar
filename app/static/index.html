@@ -696,6 +696,7 @@ const MO_SHORT = ['jan','fév','mar','avr','mai','juin','juil','août','sep','oc
 /* ── State ── */
 let _events = [], _filter = 'all', _wasRefreshing = false;
 let _watchKeywords = [];
+let _feedToken = '';
 const _ICS_ALL_TYPES = [
   'brocante', 'vide-grenier', 'vide-dressing', 'vide-maison',
   'braderie', 'bourse', 'bourse-livres', 'bourse-collection', 'bourse-jouets', 'bourse-vetements',
@@ -718,9 +719,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 /* ── ICS ── */
 function updateIcsUrl() {
   const allSelected = _ICS_ALL_TYPES.every(t => _icsTypes.has(t));
-  const url = allSelected
-    ? `${location.origin}/feed.ics`
-    : `${location.origin}/feed.ics?types=${[..._icsTypes].sort().join(',')}`;
+  const parts = [];
+  if (!allSelected) parts.push(`types=${[..._icsTypes].sort().join(',')}`);
+  if (_feedToken)   parts.push(`token=${_feedToken}`);
+  const url = `${location.origin}/feed.ics${parts.length ? '?' + parts.join('&') : ''}`;
   document.getElementById('ics-url').textContent = url;
   document.getElementById('ics-open-btn').href = url;
 }
@@ -766,6 +768,8 @@ async function loadConfig() {
     if (c.city) setGeo(`✅ ${c.city} (${(+c.lat).toFixed(4)}, ${(+c.lng).toFixed(4)})`);
     _watchKeywords = c.watch_keywords || [];
     renderKeywordChips();
+    _feedToken = c.feed_token || '';
+    updateIcsUrl();
   } catch {}
 }
 
