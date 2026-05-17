@@ -175,6 +175,7 @@ Chaque événement dans le calendrier iOS bénéficie de :
 - 🗺️ Carte intégrée (GEO + X-APPLE-STRUCTURED-LOCATION)
 - 🔔 Rappel automatique (18h la veille pour les week-ends, midi pour les jours de semaine)
 - 🔗 Lien direct vers la page de l'événement
+- ⭐ Pour les événements favoris : préfixe ⭐ dans le titre, PRIORITY:1 et une alerte supplémentaire 21 jours avant l'événement (voir [Mots-clés favoris](#mots-clés-favoris))
 
 ### Format du titre iCal
 
@@ -237,6 +238,17 @@ La ville affichée suit cette priorité : nom de commune utilisé comme lieu (ch
 - **Code postal** : affiché en badge vert à côté du lieu (extrait de la chaîne de lieu ou du géocodage Nominatim).
 - **Purge des événements** : bouton dédié pour vider le cache, ou automatiquement à chaque changement de localisation/rayon.
 - **Statut des sources** : indicateur ✅/❌ pour brocabrac.fr dans la barre de statut.
+- **Taille de l'événement** : le nombre d'exposants (extrait du champ `.dots` de brocabrac.fr) s'affiche en points (•/••/•••/••••/•••••) dans la liste et dans la description ICS (`👥 De 100 à 200 exposants  •••`).
+
+### Mots-clés favoris
+
+La carte **⭐ Mots-clés favoris** permet de marquer des événements récurrents importants.
+
+- Ajouter un mot-clé (commune, portion de titre) → les événements correspondants sont immédiatement mis en avant
+- **Dans la liste** : badge ⭐ jaune sur les cartes correspondantes, onglet **⭐ Favoris** pour les isoler
+- **Dans le calendrier iPhone** : préfixe `⭐` dans le titre, `PRIORITY:1`, et un second rappel **21 jours avant** l'événement — mécanisme le plus proche d'une alerte "événement apparu" puisque la plupart des brocantes sont publiées 2 à 6 mois à l'avance
+
+Les mots-clés sont persistés dans `config.json` et sauvegardés automatiquement lors de chaque ajout/suppression.
 
 ### Purge des événements
 
@@ -264,7 +276,8 @@ Le prochain scan planifié (ou un `POST /api/refresh`) repopule la liste.
   "lng": 4.836,
   "city": "Lyon",
   "radius_km": 30,
-  "refresh_hours": 12
+  "refresh_hours": 12,
+  "watch_keywords": ["Saint-Arnoult", "Limours"]
 }
 ```
 
@@ -275,8 +288,11 @@ Le prochain scan planifié (ou un `POST /api/refresh`) repopule la liste.
 | `city` | string | non vide |
 | `radius_km` | int | 1 – 500 |
 | `refresh_hours` | int | 1 – 168 |
+| `watch_keywords` | list[str] | optionnel, défaut `[]` |
 
 Retourne `422` si une contrainte n'est pas respectée.
+
+Modifier `watch_keywords` invalide le cache ICS (le flux est régénéré au prochain appel).
 
 ### GET /api/status — réponse
 
@@ -404,7 +420,7 @@ DATA_DIR=./data uvicorn app.main:app --reload --port 8000
 ## Tests
 
 ```bash
-# Lancer tous les tests (288 tests, ~3s)
+# Lancer tous les tests (326 tests, ~3s)
 pytest
 
 # Par catégorie
@@ -422,3 +438,55 @@ structure a changé de façon à casser le scraper.
 | Variable | Défaut | Description |
 |---|---|---|
 | `DATA_DIR` | `./data` | Répertoire de persistance JSON |
+| `FEED_TOKEN` | *(vide)* | Si défini, l'URL du flux ICS inclut `?token=<valeur>` et la section Abonnement de l'UI l'affiche automatiquement. À utiliser avec Caddy pour filtrer les requêtes sans token côté proxy (voir ci-dessous). |
+
+---
+
+## Exposition sécurisée avec Caddy
+
+Scénario recommandé pour une exposition sur internet :
+- **UI + API** : accessible uniquement depuis le réseau local (pas d'authentification requise)
+- **`/feed.ics`** : public mais protégé par un token secret dans l'URL (nécessaire pour l'abonnement iPhone depuis l'extérieur)
+
+**Générer le token :**
+```bash
+openssl rand -hex 32
+```
+
+**Définir la variable d'env :**
+```yaml
+# docker-compose.yml
+environment:
+  - FEED_TOKEN=ton_token_generé_ci_dessus
+```
+
+**Caddyfile :**
+```caddy
+brocantes.ton-domaine.com {
+
+    @ics_ok {
+        path /feed.ics
+        query token=ton_token_generé_ci_dessus
+    }
+    handle @ics_ok {
+        reverse_proxy brocantes-app:8080
+    }
+
+    handle /feed.ics {
+        respond "Forbidden" 403
+    }
+
+    @lan {
+        remote_ip 127.0.0.0/8 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12
+    }
+    handle @lan {
+        reverse_proxy brocantes-app:8080
+    }
+
+    handle {
+        respond "Accès réservé au réseau local" 403
+    }
+}
+```
+
+L'URL complète avec token est affichée automatiquement dans la section **Abonnement iPhone** de l'UI (accessible en LAN). Il suffit de la copier-coller.
